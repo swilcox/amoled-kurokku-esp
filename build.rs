@@ -3,6 +3,16 @@ use std::process::Command;
 #[path = "build_support/fontgen.rs"]
 mod fontgen;
 
+/// Font for server-sent text (messages, status lines).
+const TEXT_FONT: &str = "assets/fonts/FiraSans-SemiBold.ttf";
+/// Printable ASCII plus common punctuation, symbols and Western European
+/// accented letters. Anything else renders as `?`.
+const TEXT_CHARS: &str = concat!(
+    " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~",
+    "°•–—‘’“”…€£¢¥©®™±×÷¿¡",
+    "ÀÁÂÄÅÆÇÈÉÊËÌÍÎÏÑÒÓÔÖØÙÚÛÜàáâäåæçèéêëìíîïñòóôöøùúûüß",
+);
+
 fn main() {
     // Build-script cfg evaluates for the *host*, so gate on the target via
     // CARGO_CFG_TARGET_OS instead. On host `cargo test` this is a no-op.
@@ -68,6 +78,15 @@ fn main() {
                 px: 64.0,
                 chars: " 0123456789APM",
             },
+            fontgen::FontSpec {
+                name: "BANNER",
+                file: "assets/fonts/BebasNeue-Regular.ttf",
+                px: 140.0,
+                chars: " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+            },
+            fontgen::FontSpec { name: "TEXT_S", file: TEXT_FONT, px: 44.0, chars: TEXT_CHARS },
+            fontgen::FontSpec { name: "TEXT_M", file: TEXT_FONT, px: 64.0, chars: TEXT_CHARS },
+            fontgen::FontSpec { name: "TEXT_L", file: TEXT_FONT, px: 140.0, chars: TEXT_CHARS },
         ],
     );
 

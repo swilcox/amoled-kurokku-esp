@@ -131,6 +131,26 @@ pub fn read(i2c: &mut esp_idf_svc::hal::i2c::I2cDriver) -> anyhow::Result<Option
     Ok(decode(&r))
 }
 
+/// Set the system clock from the RTC (kept in UTC). If the RTC was never
+/// set — or holds something implausible — seed it with the firmware build
+/// time, which is close enough until NTP corrects it.
+#[cfg(target_os = "espidf")]
+pub fn init_system_time(i2c: &mut esp_idf_svc::hal::i2c::I2cDriver) -> anyhow::Result<DateTime> {
+    let built: i64 = env!("KUROKKU_BUILD_UNIX_TIME").parse().unwrap_or(0);
+    let utc = match read(i2c) {
+        Ok(Some(dt)) if dt.plausible(built) => dt,
+        other => {
+            let dt = DateTime::from_unix(built);
+            log::warn!("rtc unset ({other:?}); seeding with build time {dt:?}");
+            write(i2c, &dt)?;
+            dt
+        }
+    };
+    let tv = esp_idf_svc::sys::timeval { tv_sec: utc.to_unix() as _, tv_usec: 0 };
+    unsafe { esp_idf_svc::sys::settimeofday(&tv, core::ptr::null()) };
+    Ok(utc)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

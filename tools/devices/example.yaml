@@ -1,0 +1,18 @@
+# Copy to tools/devices/<your-device-id>.yaml and edit.
+# Real device files are gitignored; only this template is checked in.
+#
+# Required keys:
+device_id: kitchen-01
+wifi_ssid: MyNetwork
+# Required to be present, but may be empty for an open network (e.g. a campus
+# or IoT SSID that authenticates by registered MAC address): wifi_pass: ""
+wifi_pass: correcthorsebatterystaple
+server_url: http://192.168.1.100:8080
+tz: CST6CDT,M3.2.0,M11.1.0
+
+# Optional keys (omit to take firmware defaults):
+# format_24h: true          # bool, default true
+# brightness: 12            # 0-15, default 12
+# poll_ms: 5000             # default 5000
+# syslog_host: 192.168.1.50:5514   # omit to disable UDP syslog
+# ntp_server: pool.ntp.org  # omit to use ESP-IDF's pool.ntp.org defaults

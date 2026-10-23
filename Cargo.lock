@@ -42,6 +42,8 @@ dependencies = [
  "fontdue",
  "log",
  "png",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

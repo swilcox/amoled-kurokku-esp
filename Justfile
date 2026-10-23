@@ -59,6 +59,12 @@ test:
     cargo test --target {{ `rustc -vV | awk '/^host/ {print $2}'` }}
 
 # Render a clock face to PNG on the host.
-# Usage: just preview [HH:MM:SS] [12h] [out.png]
+# Usage: just preview [HH:MM:SS] [12h] | message "text" [up] [small|medium|large] [@ms] | status "TITLE" "detail"
+[positional-arguments]
 preview *args:
-    cargo run --example preview --target {{ `rustc -vV | awk '/^host/ {print $2}'` }} -- {{args}}
+    cargo run --example preview --target {{ `rustc -vV | awk '/^host/ {print $2}'` }} -- "$@"
+
+# Provision a device's NVS from tools/devices/<name>.yaml.
+# Usage: just provision amoled0 [/dev/cu.usbmodem2101]
+provision device port="":
+    uv run tools/provision.py {{device}} {{ if port != "" { "--port " + port } else { "" } }}

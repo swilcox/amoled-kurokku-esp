@@ -118,12 +118,19 @@ impl<'a> Canvas<'a> {
     }
 
     /// Draw `s` with its pen starting at (x, baseline). Returns the pen x
-    /// after the last character.
+    /// after the last character drawn (drawing stops past the canvas).
     pub fn text(&mut self, font: &Font, x: i32, baseline: i32, s: &str, color: u16) -> i32 {
         let mut pen = x;
         for c in s.chars() {
             if let Some(g) = font.glyph(c) {
-                self.glyph(font, g, pen, baseline, color);
+                // Skip glyphs wholly left of this canvas; stop once past it.
+                // Keeps long scrolling messages cheap per band.
+                if pen + g.left as i32 > self.area.x1 {
+                    break;
+                }
+                if pen + g.left as i32 + g.w as i32 >= self.area.x0 {
+                    self.glyph(font, g, pen, baseline, color);
+                }
                 pen += g.advance as i32;
             }
         }
@@ -159,7 +166,7 @@ impl Renderer {
     }
 
     /// Redraw `rects` from `scene` onto `panel`.
-    pub fn render(&mut self, panel: &mut impl Panel, scene: &impl Scene, rects: &[Rect]) -> Result<()> {
+    pub fn render<S: Scene + ?Sized>(&mut self, panel: &mut impl Panel, scene: &S, rects: &[Rect]) -> Result<()> {
         for r in rects.iter().filter_map(Rect::aligned) {
             let rows = ((self.buf.len() / r.width() as usize) & !1) as i32;
             let mut y = r.y0;

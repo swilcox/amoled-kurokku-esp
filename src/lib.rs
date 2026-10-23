@@ -11,10 +11,24 @@ pub mod color;
 pub mod font;
 pub mod fonts;
 pub mod gfx;
+pub mod protocol;
 pub mod rtc;
 pub mod touch;
+pub mod widget;
 
 #[cfg(target_os = "espidf")]
 pub mod co5300;
 #[cfg(target_os = "espidf")]
+pub mod config;
+#[cfg(target_os = "espidf")]
+pub mod engine;
+#[cfg(target_os = "espidf")]
+pub mod ota;
+#[cfg(target_os = "espidf")]
 pub mod pmic;
+#[cfg(target_os = "espidf")]
+pub mod poller;
+#[cfg(target_os = "espidf")]
+pub mod udp_log;
+#[cfg(target_os = "espidf")]
+pub mod wifi;

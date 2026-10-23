@@ -13,9 +13,17 @@ opt-level = "s"
 debug = true
 opt-level = "z"
 
+# build.rs rasterizes fonts with fontdue; unoptimized, that takes a while.
+[profile.dev.build-override]
+opt-level = 3
+[profile.release.build-override]
+opt-level = 3
+
 [dependencies]
 log = { version = "0.4", default-features = false }
 anyhow = "1"
+serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
+serde_json = { version = "1", default-features = false, features = ["alloc"] }
 
 # ESP-IDF bindings — only needed for the firmware target. Keeping this
 # target-gated lets `cargo test --target <host>` build pure modules without

@@ -61,11 +61,13 @@ Throughput: 40 MHz × 4 lines works out to about 23 ms per full frame in theory,
 
 ### Phase 2: Connectivity (port from led-kurokku-esp)
 - NVS config plus `provision.py`, WiFi, SNTP → **write back to RTC**, udp syslog, HTTP polling, OTA.
-- New `display_type=amoled480`. Brightness 0–15 maps to 0–255.
-- **Message widget**: color, size, horizontal *and* vertical scroll, static/centered when it fits.
-- **Temperature** = message/`redis_key` (nalssi already writes it) at first, then a dedicated `info` widget.
-- Server: accept the new display type; pass through the new optional fields.
-- ✅ Done when: server playlists drive clock ⇄ messages ⇄ temperature on the device.
+- `display_type=amoled480`. Brightness 0–15 maps to 0–255 along a perceptual curve.
+- **Message widget**: static/centered when it fits, otherwise a horizontal marquee or (`direction: "up"`) a word-wrapped vertical crawl; `color` (`#RRGGBB`) and `size` (`small`/`medium`/`large`). `scroll_speed_ms` keeps its LED meaning (ms per matrix column), scaled so text crosses the screen as fast as it crosses a 32-column matrix.
+- **Temperature** = message with `redis_key` (nalssi already writes it). A dedicated `info` widget can come later.
+- **Status screens** at boot (KUROKKU → WIFI → ONLINE + IP); unsupported instruction types (animation, raw_*) fall back to the clock.
+- Buttons: KEY now also dismisses a message back to the clock.
+- Server (`kurokku-esp-server`, branch `amoled480`): new display type in the device form; `style` (clock) and `direction`/`color`/`size` (message) in the model, resolver and playlist form, so UI edits keep them.
+- ✅ Done when: server playlists drive clock ⇄ messages ⇄ temperature on the device. **Done 2026-10-22**: device `amoled0` on the live server with playlist `amoled-test`; boot to engine 6 s, NTP within 3 s, 241 KB free heap with WiFi, app image 2.4 MB of the 3 MB slot.
 
 ### Phase 3: Clock styles
 `style` field on the clock instruction:
