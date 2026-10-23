@@ -173,9 +173,12 @@ impl Widget for Message {
     }
 
     fn frame_ms(&self) -> u32 {
+        // Scrolling: redraw as often as possible. Each frame takes ~12 ms to
+        // render and send, so this runs ~75 fps — small steps per frame keep
+        // motion smooth, and any tear is only a few pixels.
         match self.mode {
             Mode::Static => 100,
-            _ => 10,
+            _ => 1,
         }
     }
 }

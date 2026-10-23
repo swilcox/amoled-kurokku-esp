@@ -9,6 +9,7 @@
 use anyhow::Result;
 
 use crate::board::{LCD_H, LCD_W};
+use crate::color::to_wire;
 use crate::font::{Font, Glyph};
 
 /// Inclusive rectangle in screen coordinates.
@@ -69,8 +70,9 @@ pub fn blend565(bg: u16, fg: u16, a: u8) -> u16 {
     }
 }
 
-/// A window onto the screen backed by a row-major buffer of native-order
-/// RGB565. Drawing outside `area` is clipped.
+/// A window onto the screen backed by a row-major buffer of pixels in wire
+/// (MSB-first) order, so a finished band can go to the panel as-is. Colors
+/// passed in are ordinary RGB565. Drawing outside `area` is clipped.
 pub struct Canvas<'a> {
     area: Rect,
     buf: &'a mut [u16],
@@ -92,26 +94,50 @@ impl<'a> Canvas<'a> {
 
     pub fn fill(&mut self, r: Rect, color: u16) {
         let Some(r) = r.intersect(&self.area) else { return };
+        let wire = to_wire(color);
         for y in r.y0..=r.y1 {
             let i = self.index(r.x0, y);
-            self.buf[i..i + r.width() as usize].fill(color);
+            self.buf[i..i + r.width() as usize].fill(wire);
         }
     }
 
     /// Draw one glyph with its pen position at (x, baseline).
+    ///
+    /// Hot path for scrolling text. Most glyph pixels are fully transparent
+    /// or fully opaque; only antialiased edges blend, and those reuse a
+    /// 16-entry table for the most recent background color.
     pub fn glyph(&mut self, font: &Font, g: &Glyph, x: i32, baseline: i32, color: u16) {
         let gx = x + g.left as i32;
         let gy = baseline + g.top as i32;
         let Some(r) = Rect::from_size(gx, gy, g.w as i32, g.h as i32).intersect(&self.area) else {
             return;
         };
+        let stride = (g.w as usize).div_ceil(2);
+        let data = &font.data[g.offset as usize..];
+        let fg = to_wire(color);
+        let mut lut_bg = None;
+        let mut lut = [0u16; 16];
+        let (sx0, w) = ((r.x0 - gx) as usize, r.width() as usize);
         for y in r.y0..=r.y1 {
-            let row = self.index(r.x0, y);
-            for (i, x) in (r.x0..=r.x1).enumerate() {
-                let a = font.alpha(g, (x - gx) as usize, (y - gy) as usize);
-                if a != 0 {
-                    let p = &mut self.buf[row + i];
-                    *p = blend565(*p, color, a);
+            let src = &data[(y - gy) as usize * stride..][..stride];
+            let start = self.index(r.x0, y);
+            for (i, dst) in self.buf[start..start + w].iter_mut().enumerate() {
+                let sx = sx0 + i;
+                let b = src[sx / 2];
+                let a = if sx % 2 == 0 { b >> 4 } else { b & 0x0F };
+                match a {
+                    0 => {}
+                    15 => *dst = fg,
+                    _ => {
+                        if lut_bg != Some(*dst) {
+                            let bg = to_wire(*dst);
+                            for (k, e) in lut.iter_mut().enumerate() {
+                                *e = to_wire(blend565(bg, color, k as u8));
+                            }
+                            lut_bg = Some(*dst);
+                        }
+                        *dst = lut[a as usize];
+                    }
                 }
             }
         }
@@ -151,37 +177,54 @@ pub trait Scene {
 
 /// A display that accepts rectangles of pixels in wire (MSB-first) order.
 pub trait Panel {
+    /// Start sending `pixels` to `area`. May return while the transfer is
+    /// still in flight: the caller must leave `pixels` untouched until the
+    /// next `draw` or `flush` returns.
     fn draw(&mut self, area: Rect, pixels: &[u16]) -> Result<()>;
+
+    /// Wait for any transfer still in flight.
+    fn flush(&mut self) -> Result<()> {
+        Ok(())
+    }
 }
 
+/// Renders scenes in bands, alternating between two buffers so the next
+/// band is drawn while the previous one is still being sent.
 pub struct Renderer {
-    buf: Vec<u16>,
+    bufs: [Vec<u16>; 2],
 }
 
 impl Renderer {
-    /// `pixels` is the band buffer size; it must hold at least two full rows.
+    /// `pixels` is the size of each of the two band buffers; it must hold at
+    /// least two full rows.
     pub fn new(pixels: usize) -> Self {
         assert!(pixels >= 2 * LCD_W as usize);
-        Self { buf: vec![0; pixels] }
+        Self { bufs: [vec![0; pixels], vec![0; pixels]] }
     }
 
     /// Redraw `rects` from `scene` onto `panel`.
     pub fn render<S: Scene + ?Sized>(&mut self, panel: &mut impl Panel, scene: &S, rects: &[Rect]) -> Result<()> {
-        for r in rects.iter().filter_map(Rect::aligned) {
-            let rows = ((self.buf.len() / r.width() as usize) & !1) as i32;
-            let mut y = r.y0;
-            while y <= r.y1 {
-                let band = Rect::new(r.x0, y, r.x1, (y + rows - 1).min(r.y1));
-                let buf = &mut self.buf[..(band.width() * band.height()) as usize];
-                scene.draw(&mut Canvas::new(band, buf));
-                for p in buf.iter_mut() {
-                    *p = crate::color::to_wire(*p);
+        let mut which = 0;
+        let result = (|| {
+            for r in rects.iter().filter_map(Rect::aligned) {
+                let rows = ((self.bufs[0].len() / r.width() as usize) & !1) as i32;
+                let mut y = r.y0;
+                while y <= r.y1 {
+                    let band = Rect::new(r.x0, y, r.x1, (y + rows - 1).min(r.y1));
+                    // Safe to overwrite: the panel's last `draw` returned only
+                    // after the transfer from this buffer (two bands ago) ended.
+                    let buf = &mut self.bufs[which][..(band.width() * band.height()) as usize];
+                    scene.draw(&mut Canvas::new(band, buf));
+                    panel.draw(band, buf)?;
+                    which ^= 1;
+                    y = band.y1 + 1;
                 }
-                panel.draw(band, buf)?;
-                y = band.y1 + 1;
             }
-        }
-        Ok(())
+            Ok(())
+        })();
+        // Never return with DMA still reading our buffers.
+        panel.flush()?;
+        result
     }
 }
 
@@ -250,6 +293,24 @@ mod tests {
                 for x in a.x0..=a.x1 {
                     c.fill(Rect::new(x, y, x, y), ((x ^ y) & 0xFFFF) as u16);
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn fast_glyph_path_matches_reference_blend() {
+        use crate::fonts::TEXT_L;
+        let (bg, fg) = (0x1234, 0xFD20);
+        let g = TEXT_L.glyph('&').unwrap();
+        let area = Rect::from_size(0, 0, g.w as i32 + 4, g.h as i32 + 4);
+        let mut buf = vec![0u16; (area.width() * area.height()) as usize];
+        let mut c = Canvas::new(area, &mut buf);
+        c.fill(area, bg);
+        c.glyph(&TEXT_L, g, 2 - g.left as i32, 2 - g.top as i32, fg);
+        for y in 0..g.h as usize {
+            for x in 0..g.w as usize {
+                let got = buf[(y + 2) * area.width() as usize + x + 2].swap_bytes();
+                assert_eq!(got, blend565(bg, fg, TEXT_L.alpha(g, x, y)), "({x}, {y})");
             }
         }
     }

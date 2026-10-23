@@ -9,7 +9,7 @@
 
 use core::ffi::c_void;
 use core::ptr;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use anyhow::{anyhow, Result};
 use esp_idf_svc::hal::delay::FreeRtos;
@@ -50,6 +50,9 @@ const INIT_CMDS: &[(u8, &[u8], u32)] = &[
 ];
 
 static COLOR_DONE: AtomicBool = AtomicBool::new(true);
+
+/// Microseconds spent waiting for DMA to finish, for frame profiling.
+pub static WAIT_US: AtomicU32 = AtomicU32::new(0);
 
 unsafe extern "C" fn on_color_done(
     _io: esp_lcd_panel_io_handle_t,
@@ -137,27 +140,22 @@ impl Co5300 {
     }
 
     /// Turn the panel output on/off (pixels are retained).
-    #[allow(dead_code)]
     pub fn set_on(&self, on: bool) -> Result<()> {
         self.cmd(if on { CMD_DISPON } else { CMD_DISPOFF }, &[])
     }
 
-    fn wait_idle(&self) {
-        while !COLOR_DONE.load(Ordering::Acquire) {
-            FreeRtos::delay_ms(1);
-        }
-    }
-
-    /// Write `pixels` (wire order, row-major) into the inclusive rectangle
-    /// `(x0, y0)..=(x1, y1)`. The controller needs an even start and odd end
-    /// on both axes. Blocks until the DMA transfer completes.
+    /// Start writing `pixels` (wire order, row-major) into the inclusive
+    /// rectangle `(x0, y0)..=(x1, y1)`; returns once the DMA is queued. The
+    /// controller needs an even start and odd end on both axes. `pixels`
+    /// must stay untouched until the next `draw_raw` or `flush` returns.
     pub fn draw_raw(&self, x0: u16, y0: u16, x1: u16, y1: u16, pixels: &[u16]) -> Result<()> {
         debug_assert!(x0 % 2 == 0 && y0 % 2 == 0 && x1 % 2 == 1 && y1 % 2 == 1);
         debug_assert!(x1 < LCD_W && y1 < LCD_H);
         let n = (x1 - x0 + 1) as usize * (y1 - y0 + 1) as usize;
         debug_assert!(pixels.len() >= n);
 
-        self.wait_idle();
+        // Window commands can't be sent while the previous band is in flight.
+        self.flush();
         let [xh0, xl0] = x0.to_be_bytes();
         let [xh1, xl1] = x1.to_be_bytes();
         let [yh0, yl0] = y0.to_be_bytes();
@@ -167,20 +165,33 @@ impl Co5300 {
 
         COLOR_DONE.store(false, Ordering::Release);
         let word = (OPCODE_WRITE_COLOR << 24 | (CMD_RAMWR as u32) << 8) as i32;
-        if let Err(e) = check(
+        let res = check(
             unsafe { esp_lcd_panel_io_tx_color(self.io, word, pixels.as_ptr() as *const c_void, n * 2) },
             "esp_lcd_panel_io_tx_color",
-        ) {
+        );
+        if res.is_err() {
             COLOR_DONE.store(true, Ordering::Release);
-            return Err(e);
         }
-        self.wait_idle();
-        Ok(())
+        res
+    }
+
+    /// Block until the last queued transfer has finished.
+    pub fn flush(&self) {
+        let t0 = unsafe { esp_timer_get_time() };
+        while !COLOR_DONE.load(Ordering::Acquire) {
+            core::hint::spin_loop();
+        }
+        WAIT_US.fetch_add((unsafe { esp_timer_get_time() } - t0) as u32, Ordering::Relaxed);
     }
 }
 
 impl Panel for Co5300 {
     fn draw(&mut self, a: Rect, pixels: &[u16]) -> Result<()> {
         self.draw_raw(a.x0 as u16, a.y0 as u16, a.x1 as u16, a.y1 as u16, pixels)
+    }
+
+    fn flush(&mut self) -> Result<()> {
+        Co5300::flush(self);
+        Ok(())
     }
 }

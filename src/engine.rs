@@ -64,6 +64,15 @@ pub struct Engine {
     brightness: u8,
     panel_on: bool,
     boot: Instant,
+    prof: Profile,
+}
+
+#[derive(Default)]
+struct Profile {
+    since_ms: u32,
+    frames: u32,
+    total_us: u32,
+    pixels: u32,
 }
 
 impl Engine {
@@ -83,6 +92,7 @@ impl Engine {
             brightness,
             panel_on: true,
             boot: Instant::now(),
+            prof: Profile::default(),
         })
     }
 
@@ -112,15 +122,39 @@ impl Engine {
         let now = self.now_ms();
         match self.widget.tick(now, &clock::now_local()) {
             Step::Redraw(rects) if !rects.is_empty() => {
+                let t0 = Instant::now();
                 if let Err(e) = self.renderer.render(&mut self.hw.lcd, &*self.widget, &rects) {
                     log::error!("render failed: {e}");
                 }
+                self.profile(now, t0.elapsed(), &rects);
             }
             Step::Redraw(_) => {}
             Step::Done => {
                 log::debug!("widget finished; showing clock");
                 self.show_clock();
             }
+        }
+    }
+
+    /// Frame profiling: every 2 s of continuous redraws, log frame rate and
+    /// where the time goes (total vs. time inside the panel transfer).
+    fn profile(&mut self, now: u32, took: Duration, rects: &[crate::gfx::Rect]) {
+        let p = &mut self.prof;
+        p.frames += 1;
+        p.total_us += took.as_micros() as u32;
+        p.pixels += rects.iter().map(|r| (r.width() * r.height()) as u32).sum::<u32>();
+        if now.wrapping_sub(p.since_ms) >= 2000 {
+            let draw_us = crate::co5300::WAIT_US.swap(0, core::sync::atomic::Ordering::Relaxed);
+            if p.frames > 5 {
+                log::info!(
+                    "frames: {:.1} fps, {} ms/frame ({} ms waiting on DMA), {} px/frame",
+                    p.frames as f32 * 1000.0 / now.wrapping_sub(p.since_ms) as f32,
+                    p.total_us / p.frames / 1000,
+                    draw_us / p.frames / 1000,
+                    p.pixels / p.frames,
+                );
+            }
+            *p = Profile { since_ms: now, ..Default::default() };
         }
     }
 

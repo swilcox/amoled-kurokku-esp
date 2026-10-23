@@ -69,6 +69,8 @@ Throughput: 40 MHz × 4 lines works out to about 23 ms per full frame in theory,
 - Server (`kurokku-esp-server`, branch `amoled480`): new display type in the device form; `style` (clock) and `direction`/`color`/`size` (message) in the model, resolver and playlist form, so UI edits keep them.
 - ✅ Done when: server playlists drive clock ⇄ messages ⇄ temperature on the device. **Done 2026-10-22**: device `amoled0` on the live server with playlist `amoled-test`; boot to engine 6 s, NTP within 3 s, 241 KB free heap with WiFi, app image 2.4 MB of the 3 MB slot.
 
+- **Smooth scrolling** (2026-10-22): the panel's TE line isn't wired (GPIO14 probed), so there's no vsync. Instead each frame is written well inside one ~16.7 ms refresh: wire-order canvas, a glyph fast path (only antialiased edges blend), and double-buffered bands so drawing overlaps DMA. Marquee went from 22 fps / 36 ms per frame to ~75 fps / 12 ms (3 ms DMA wait).
+
 ### Phase 3: Clock styles
 `style` field on the clock instruction:
 - `modern`: Phase 1.
