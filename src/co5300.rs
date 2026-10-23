@@ -16,6 +16,7 @@ use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::sys::*;
 
 use crate::board::*;
+use crate::gfx::{Panel, Rect};
 
 const OPCODE_WRITE_CMD: u32 = 0x02;
 const OPCODE_WRITE_COLOR: u32 = 0x32;
@@ -48,9 +49,6 @@ const INIT_CMDS: &[(u8, &[u8], u32)] = &[
     (CMD_DISPON, &[], 100),
 ];
 
-/// Pixel rows per DMA transfer used by `fill_rect`.
-pub const STRIP_ROWS: u16 = 32;
-
 static COLOR_DONE: AtomicBool = AtomicBool::new(true);
 
 unsafe extern "C" fn on_color_done(
@@ -68,15 +66,13 @@ fn check(err: esp_err_t, what: &str) -> Result<()> {
 
 pub struct Co5300 {
     io: esp_lcd_panel_io_handle_t,
-    strip: Vec<u16>,
 }
 
 impl Co5300 {
-    /// Set up SPI2 in quad mode and the panel IO. Call `pmic::reset_display`
-    /// and then `init` before drawing.
-    pub fn new() -> Result<Self> {
-        let strip_px = LCD_W as usize * STRIP_ROWS as usize;
-
+    /// Set up SPI2 in quad mode and the panel IO. `max_pixels` is the
+    /// largest single `draw`. Call `pmic::reset_display` and then `init`
+    /// before drawing.
+    pub fn new(max_pixels: usize) -> Result<Self> {
         let mut bus: spi_bus_config_t = Default::default();
         bus.sclk_io_num = LCD_PCLK;
         bus.__bindgen_anon_1.data0_io_num = LCD_D0;
@@ -87,7 +83,7 @@ impl Co5300 {
         bus.data5_io_num = -1;
         bus.data6_io_num = -1;
         bus.data7_io_num = -1;
-        bus.max_transfer_sz = (strip_px * 2) as i32;
+        bus.max_transfer_sz = (max_pixels * 2) as i32;
         check(
             unsafe { spi_bus_initialize(spi_host_device_t_SPI2_HOST, &bus, spi_common_dma_t_SPI_DMA_CH_AUTO) },
             "spi_bus_initialize",
@@ -112,7 +108,7 @@ impl Co5300 {
             "esp_lcd_new_panel_io_spi",
         )?;
 
-        Ok(Self { io, strip: vec![0; strip_px] })
+        Ok(Self { io })
     }
 
     /// Send the vendor init sequence. The panel must have just been reset.
@@ -155,7 +151,7 @@ impl Co5300 {
     /// Write `pixels` (wire order, row-major) into the inclusive rectangle
     /// `(x0, y0)..=(x1, y1)`. The controller needs an even start and odd end
     /// on both axes. Blocks until the DMA transfer completes.
-    pub fn draw(&self, x0: u16, y0: u16, x1: u16, y1: u16, pixels: &[u16]) -> Result<()> {
+    pub fn draw_raw(&self, x0: u16, y0: u16, x1: u16, y1: u16, pixels: &[u16]) -> Result<()> {
         debug_assert!(x0 % 2 == 0 && y0 % 2 == 0 && x1 % 2 == 1 && y1 % 2 == 1);
         debug_assert!(x1 < LCD_W && y1 < LCD_H);
         let n = (x1 - x0 + 1) as usize * (y1 - y0 + 1) as usize;
@@ -181,28 +177,10 @@ impl Co5300 {
         self.wait_idle();
         Ok(())
     }
+}
 
-    /// Fill an inclusive rectangle with one RGB565 color.
-    pub fn fill_rect(&mut self, x0: u16, y0: u16, x1: u16, y1: u16, color: u16) -> Result<()> {
-        let w = (x1 - x0 + 1) as usize;
-        let rows = (STRIP_ROWS as usize * LCD_W as usize / w).min(LCD_H as usize) as u16 & !1;
-        let wire = crate::color::to_wire(color);
-        self.strip.fill(wire);
-        let strip = core::mem::take(&mut self.strip);
-        let mut y = y0;
-        let res = (|| {
-            while y <= y1 {
-                let end = (y + rows - 1).min(y1);
-                self.draw(x0, y, x1, end, &strip)?;
-                y = end + 1;
-            }
-            Ok(())
-        })();
-        self.strip = strip;
-        res
-    }
-
-    pub fn fill_screen(&mut self, color: u16) -> Result<()> {
-        self.fill_rect(0, 0, LCD_W - 1, LCD_H - 1, color)
+impl Panel for Co5300 {
+    fn draw(&mut self, a: Rect, pixels: &[u16]) -> Result<()> {
+        self.draw_raw(a.x0 as u16, a.y0 as u16, a.x1 as u16, a.y1 as u16, pixels)
     }
 }

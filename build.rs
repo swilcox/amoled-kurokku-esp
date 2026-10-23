@@ -1,5 +1,8 @@
 use std::process::Command;
 
+#[path = "build_support/fontgen.rs"]
+mod fontgen;
+
 fn main() {
     // Build-script cfg evaluates for the *host*, so gate on the target via
     // CARGO_CFG_TARGET_OS instead. On host `cargo test` this is a no-op.
@@ -29,6 +32,44 @@ fn main() {
 
     println!("cargo:rerun-if-changed=.git/HEAD");
     println!("cargo:rerun-if-changed=.git/index");
+
+    // Fallback wall-clock time for a device whose RTC has never been set
+    // (until NTP is available). Re-emitted whenever src/ changes, so it is
+    // roughly "when this firmware was built".
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    println!("cargo:rustc-env=KUROKKU_BUILD_UNIX_TIME={now}");
+    println!("cargo:rerun-if-changed=src");
+
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let out_dir = std::env::var("OUT_DIR").unwrap();
+    println!("cargo:rerun-if-changed=build_support");
+    fontgen::generate(
+        std::path::Path::new(&manifest_dir),
+        std::path::Path::new(&out_dir),
+        &[
+            fontgen::FontSpec {
+                name: "CLOCK_BIG",
+                file: "assets/fonts/BebasNeue-Regular.ttf",
+                px: 250.0,
+                chars: "0123456789:",
+            },
+            fontgen::FontSpec {
+                name: "CLOCK_DATE",
+                file: "assets/fonts/BebasNeue-Regular.ttf",
+                px: 48.0,
+                chars: " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+            },
+            fontgen::FontSpec {
+                name: "CLOCK_SECS",
+                file: "assets/fonts/BebasNeue-Regular.ttf",
+                px: 64.0,
+                chars: " 0123456789APM",
+            },
+        ],
+    );
 
     // Keep partitions.csv in sync with esp-idf-sys's cmake build dirs.
     // The cmake build resolves CONFIG_PARTITION_TABLE_CUSTOM_FILENAME relative

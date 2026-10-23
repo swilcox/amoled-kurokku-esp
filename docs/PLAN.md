@@ -39,8 +39,8 @@ Throughput: 40 MHz × 4 lines works out to about 23 ms per full frame in theory,
   - Target `riscv32imac-esp-espidf`, `MCU=esp32c6`, nightly plus `build-std`.
   - Alternative: no_std `esp-hal` with embassy gives more RAM and control, but we'd rebuild WiFi/HTTP/OTA/FAT ourselves. Not worth it here.
 - **Display driver**: a small Rust CO5300 driver on top of ESP-IDF's `esp_lcd_panel_io_spi` in quad mode (raw `esp-idf-sys` bindings), using the vendor init table. No C component is needed.
-- **Graphics**: `embedded-graphics` behind our own `DrawTarget` that clips to the current strip. Text uses **anti-aliased fonts** (AMOLED makes jaggies obvious). A host tool converts TTF to 4-bit alpha glyph atlases at build time.
-- **Host simulator**: keep rendering pure (no ESP deps) so clock faces and scrollers run in `embedded-graphics-simulator` on the Mac. That lets us iterate on design in seconds instead of flash cycles. This follows the "pure modules are host-testable" pattern from `led-kurokku-esp`.
+- **Graphics**: our own strip renderer (`src/gfx.rs`). A `Scene` paints any region on demand; the `Renderer` walks dirty rects in 480×32 bands. Text uses **anti-aliased fonts** (AMOLED makes jaggies obvious): `build.rs` rasterizes TTFs from `assets/fonts/` into 4-bit alpha glyph atlases with `fontdue`. `embedded-graphics` can be added behind `Canvas` when faces need shapes (flip cards, nixie tubes).
+- **Host preview**: rendering is pure (no ESP deps), so `just preview [HH:MM:SS] [12h]` renders a face to PNG on the Mac in seconds instead of a flash cycle. A unit test checks that incremental (dirty-rect) redraws match a full render pixel for pixel. This follows the "pure modules are host-testable" pattern from `led-kurokku-esp`.
 - **Image format on the wire/SD**: **QOI** (simple, streamable, small decoder) or raw RGB565. The server converts and resizes everything to 480×480. JPEG directly from the SD card can come later via `esp_jpeg`/tjpgd, which decodes in strips.
 
 ## 4. Phases
@@ -53,10 +53,11 @@ Throughput: 40 MHz × 4 lines works out to about 23 ms per full frame in theory,
 - ✅ Done when: colors on screen, brightness works, all 3 buttons identified and logged. **Done 2026-10-22**: orientation and colors correct, touch mapping fixed (180° off with vendor flags), full-screen fill 30 ms, 435 KB free heap before WiFi.
 
 ### Phase 1: Rendering core + first clock (offline)
-- Strip renderer and dirty rects; `DrawTarget`; font atlas tool and 2–3 fonts.
+- Strip renderer and dirty rects; build-time font atlases (Bebas Neue at 3 sizes).
 - **"Modern" clock**: big anti-aliased digits plus date, time from the PCF85063 RTC (works with no WiFi).
-- Simulator binary for the Mac.
-- ✅ Done when: the device boots straight to a good-looking clock without a network.
+- Host PNG preview (`just preview`).
+- Buttons: BOOT cycles brightness, KEY toggles 12/24h, PWR turns the panel off/on.
+- ✅ Done when: the device boots straight to a good-looking clock without a network. Measured: full frame 87 ms, minute rollover 18 ms, 402 KB free heap. Until NTP (Phase 2), an unset RTC is seeded from the build time.
 
 ### Phase 2: Connectivity (port from led-kurokku-esp)
 - NVS config plus `provision.py`, WiFi, SNTP → **write back to RTC**, udp syslog, HTTP polling, OTA.

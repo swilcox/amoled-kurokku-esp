@@ -57,3 +57,8 @@ monitor:
 # target from .cargo/config.toml.
 test:
     cargo test --target {{ `rustc -vV | awk '/^host/ {print $2}'` }}
+
+# Render a clock face to PNG on the host.
+# Usage: just preview [HH:MM:SS] [12h] [out.png]
+preview *args:
+    cargo run --example preview --target {{ `rustc -vV | awk '/^host/ {print $2}'` }} -- {{args}}
