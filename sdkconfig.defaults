@@ -1,0 +1,16 @@
+# Rust often needs a bit of extra main task stack size compared to C (the default is 3K)
+CONFIG_MAIN_TASK_STACK_SIZE=16000
+
+# 1000 Hz FreeRTOS tick: 1 ms granularity for thread sleeps (default 100 Hz = 10 ms)
+CONFIG_FREERTOS_HZ=1000
+
+# ESP32-C6-Touch-AMOLED-2.16 has 16MB flash and no PSRAM
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+# Custom partition table: 2x 3MB OTA slots + ~9.9MB assets partition
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# Enable HTTPS for OTA downloads
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y

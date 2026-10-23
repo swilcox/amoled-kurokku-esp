@@ -1,0 +1,6 @@
+[toolchain]
+# Pinned: nightlies from 2026-10 bump std's libc to 0.2.191, whose espidf
+# `stat` layout no longer matches std (`st_atime` vs `st_atim`) and std fails
+# to build. Re-test before moving this forward.
+channel = "nightly-2026-09-01"
+components = ["rust-src"]

@@ -1,0 +1,27 @@
+[package]
+name = "amoled-kurokku-esp"
+version = "0.1.0"
+authors = ["swilcox"]
+edition = "2021"
+resolver = "2"
+rust-version = "1.82"
+
+[profile.release]
+opt-level = "s"
+
+[profile.dev]
+debug = true
+opt-level = "z"
+
+[dependencies]
+log = { version = "0.4", default-features = false }
+anyhow = "1"
+
+# ESP-IDF bindings — only needed for the firmware target. Keeping this
+# target-gated lets `cargo test --target <host>` build pure modules without
+# an ESP toolchain.
+[target.'cfg(target_os = "espidf")'.dependencies]
+esp-idf-svc = "0.53"
+
+[build-dependencies]
+embuild = { version = "0.33", features = ["espidf"] }
