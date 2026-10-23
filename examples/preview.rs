@@ -5,6 +5,7 @@
 //!     just preview 09:05:07 led                  # clock style: modern|led|flip|nixie
 //!     just preview message "72°F" [up] [small|medium|large] [@ms] [#rrggbb]
 //!     just preview status "KUROKKU" "192.168.1.50"
+//!     just preview info                          # the info screen, sample values
 //!
 //! Output defaults to target/preview/<kind>.png. `@ms` renders a scrolling
 //! message as it looks that many milliseconds in. For clocks, `change` shows
@@ -19,7 +20,7 @@ use amoled_kurokku_esp::clock::LocalTime;
 use amoled_kurokku_esp::color::WHITE;
 use amoled_kurokku_esp::gfx::{MemPanel, Renderer};
 use amoled_kurokku_esp::protocol::{parse_color, scroll_px_per_ms};
-use amoled_kurokku_esp::widget::{clock::Clock, message, status::Status, Step, Widget};
+use amoled_kurokku_esp::widget::{clock::Clock, info::Info, message, status::Status, Step, Widget};
 
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -43,6 +44,19 @@ fn main() -> anyhow::Result<()> {
             let title = words.get(1).copied().unwrap_or("KUROKKU");
             let detail = words.get(2).copied().unwrap_or("");
             ("status", Box::new(Status::new(title, detail, None)))
+        }
+        Some("info") => {
+            let rows = [
+                ("IP", "192.168.1.143"),
+                ("WiFi", "-58 dBm"),
+                ("Server", "ok 3 s ago"),
+                ("Firmware", "0.1.0+c365cb9"),
+                ("Uptime", "3 d 04:12"),
+                ("Free RAM", "112 KB"),
+                ("Rotation", "auto, 90°"),
+            ];
+            let rows = rows.iter().map(|(l, v)| (l.to_string(), v.to_string())).collect();
+            ("info", Box::new(Info::new("amoled0", rows, u32::MAX)))
         }
         first => {
             if let Some(hms) = first.filter(|s| s.contains(':')) {

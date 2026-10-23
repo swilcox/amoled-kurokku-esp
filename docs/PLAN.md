@@ -90,17 +90,25 @@ Throughput: 40 MHz × 4 lines works out to about 23 ms per full frame in theory,
 - Later: animated images (QOI frame sequences), JPEG from SD.
 
 ### Phase 5: Interaction
-Suggested default mapping (configurable later):
+Mapping as built (the table in `src/engine.rs` is the reference):
 
-| Button | Short press | Long press |
-|---|---|---|
-| **KEY** | next widget / next clock style | status screen (IP, firmware, RSSI) |
-| **BOOT** | cycle brightness (or toggle night mode) | snooze/ack current alert |
-| **PWR** | screen off/on (AMOLED black = ~0 power) | *(hardware power-off, 4 s)* |
+| Input | Action |
+|---|---|
+| **KEY** | next clock face / close overlay / dismiss to the clock |
+| **KEY** hold | info screen (IP, RSSI, server health, firmware, uptime, heap, rotation) |
+| **BOOT** | cycle brightness |
+| **BOOT** hold | lock rotation where it is / back to auto (persisted as `rotation`) |
+| **PWR** | screen off; any button wakes it. *(Hold 4 s: hardware power-off.)* |
+| tap | info screen on/off |
+| swipe left / right | next / previous clock face (dismiss to the clock) |
+| swipe up / down | brighter / dimmer |
 
-- Touch: swipe left/right = previous/next widget, tap = show info overlay.
-- IMU: auto-rotate to case orientation; optionally wake on pickup or tap.
-- Report events to the server (`POST …/events`) so the server can react, e.g. "ack alert" or "skip playlist entry".
+- Buttons report short presses on release and long presses (800 ms) while still held (`buttons::PressTracker`).
+- Touch and the QMI8658 accelerometer are polled by an `input` thread (50 Hz / 5 Hz) that shares the I2C bus behind a mutex, so 3 ms touch reads never stall the display thread. `touch::Gestures` turns points into tap / long press / swipe; a dropped sample mid-touch doesn't end it.
+- **Rotation** is done in software: the CO5300 only mirrors X, so the renderer turns each band on its way out (`gfx::Rotation`: 180° reverses the band; 90/270 transpose through a 30 KB scratch buffer). Touches map back through the same rotation. Auto-rotate needs 0.6 g in the screen plane held for 1 s; flat or diagonal keeps the current rotation. Config `rotation`: `auto` (default) or fixed `0|90|180|270`.
+- Overlays (info, notices) cover the active widget; server changes wait until they close, then the widget (or image) is repainted.
+- ✅ **Done 2026-10-23** (firmware). All controls and all four orientations checked on the device.
+- Next: report events to the server (`POST …/events`) so it can react, e.g. "skip playlist entry" or "ack alert".
 
 ### Phase 6: Server and scheduling
 - Extend **kurokku-esp-server** rather than writing a new one. It already has playlists, cron entries, alerts, day/night brightness from lat/long (`internal/solar`), OTA and the admin UI.

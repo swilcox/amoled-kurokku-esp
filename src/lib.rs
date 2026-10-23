@@ -13,6 +13,7 @@ pub mod font;
 pub mod fonts;
 pub mod gfx;
 pub mod image;
+pub mod imu;
 pub mod protocol;
 pub mod qoi;
 pub mod rtc;
@@ -26,6 +27,8 @@ pub mod co5300;
 pub mod config;
 #[cfg(target_os = "espidf")]
 pub mod engine;
+#[cfg(target_os = "espidf")]
+pub mod input;
 #[cfg(target_os = "espidf")]
 pub mod media;
 #[cfg(target_os = "espidf")]

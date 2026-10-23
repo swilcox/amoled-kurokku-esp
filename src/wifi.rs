@@ -129,6 +129,11 @@ pub fn sta_mac() -> Result<String> {
 /// not need the WiFi handle locked — the parameter just documents that a
 /// connection is expected.
 pub fn get_rssi(_wifi: &BlockingWifi<EspWifi<'static>>) -> Option<i32> {
+    sta_rssi()
+}
+
+/// `get_rssi` for callers that don't hold the WiFi handle.
+pub fn sta_rssi() -> Option<i32> {
     let mut rssi: core::ffi::c_int = 0;
     let err = unsafe { esp_idf_svc::sys::esp_wifi_sta_get_rssi(&mut rssi) };
     if err == esp_idf_svc::sys::ESP_OK {
@@ -145,6 +150,24 @@ pub fn get_ip(wifi: &BlockingWifi<EspWifi<'static>>) -> Option<String> {
         .get_ip_info()
         .ok()
         .map(|info| format!("{}", info.ip))
+}
+
+/// The station IP address without the WiFi handle (which the network
+/// thread may hold for seconds while reconnecting), or None.
+pub fn sta_ip() -> Option<String> {
+    use esp_idf_svc::sys::*;
+    unsafe {
+        let netif = esp_netif_get_handle_from_ifkey(c"WIFI_STA_DEF".as_ptr());
+        if netif.is_null() {
+            return None;
+        }
+        let mut info: esp_netif_ip_info_t = Default::default();
+        if esp_netif_get_ip_info(netif, &mut info) != ESP_OK || info.ip.addr == 0 {
+            return None;
+        }
+        // Stored in network byte order.
+        Some(std::net::Ipv4Addr::from(info.ip.addr.to_le_bytes()).to_string())
+    }
 }
 
 /// Start SNTP and block up to `wait` for the first sync to complete.

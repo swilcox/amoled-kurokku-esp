@@ -94,6 +94,8 @@ fn main() {
             px: 140.0,
             chars: " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
         },
+        // The info screen: ASCII is enough.
+        fontgen::FontSpec { name: "TEXT_XS", file: TEXT_FONT, px: 34.0, chars: &TEXT_CHARS[..95] },
         fontgen::FontSpec { name: "TEXT_S", file: TEXT_FONT, px: 44.0, chars: TEXT_CHARS },
         fontgen::FontSpec { name: "TEXT_M", file: TEXT_FONT, px: 64.0, chars: TEXT_CHARS },
         fontgen::FontSpec { name: "TEXT_L", file: TEXT_FONT, px: 140.0, chars: TEXT_CHARS },

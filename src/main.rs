@@ -5,9 +5,7 @@
 //! step degrades gracefully: with no config or no network the clock still
 //! runs from the RTC.
 //!
-//! Buttons: BOOT cycles brightness; KEY cycles the clock face (modern, LED,
-//! flip, nixie) or dismisses anything else to the clock; PWR turns the panel
-//! off/on.
+//! Controls (buttons, touch, auto-rotate): see `engine`.
 
 #[cfg(target_os = "espidf")]
 fn main() -> anyhow::Result<()> {
@@ -25,7 +23,7 @@ fn main() -> anyhow::Result<()> {
     use amoled_kurokku_esp::poller::{HttpPoller, FIRMWARE_VERSION};
     use amoled_kurokku_esp::widget::status::Status;
     use amoled_kurokku_esp::gfx::{Renderer, Solid, SCREEN};
-    use amoled_kurokku_esp::{assets, color, config, media, ota, pmic, rtc, udp_log, wifi};
+    use amoled_kurokku_esp::{assets, color, config, media, ota, pmic, rtc, touch, udp_log, wifi};
 
     /// Attempts at the boot-time join. A failed join costs ~19 s, and the
     /// hopeless case (SSID absent) fails identically every time, so two.
@@ -92,8 +90,10 @@ fn main() -> anyhow::Result<()> {
     }
     let utc = rtc::init_system_time(&mut i2c)?;
     log::info!("time from RTC: {utc:?} UTC");
+    touch::init()?;
 
-    let mut engine = Engine::new(cfg.clone(), nvs_partition.clone(), Hardware { lcd, i2c })?;
+    let hw = Hardware { lcd, i2c: Arc::new(Mutex::new(i2c)) };
+    let mut engine = Engine::new(cfg.clone(), nvs_partition.clone(), hw)?;
     engine.show(Box::new(Status::new("KUROKKU", env!("CARGO_PKG_VERSION"), None)));
 
     if !cfg.has_wifi_config() {

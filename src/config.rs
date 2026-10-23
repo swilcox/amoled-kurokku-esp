@@ -33,6 +33,8 @@ pub struct AppConfig {
     /// Default clock face (see `clock::STYLES`), chosen with the KEY button.
     /// A `style` sent by the server takes precedence.
     pub clock_style: String,
+    /// "auto" (follow the IMU) or a fixed "0", "90", "180" or "270".
+    pub rotation: String,
 }
 
 /// Parse a log level string into a `LevelFilter`. Unrecognized values (including
@@ -64,6 +66,7 @@ impl AppConfig {
         let log_level = nvs_get_str(nvs, "log_level").unwrap_or_else(|| "info".to_string());
         let ntp_server = nvs_get_str(nvs, "ntp_server");
         let clock_style = nvs_get_str(nvs, "clock_style").unwrap_or_else(|| "modern".to_string());
+        let rotation = nvs_get_str(nvs, "rotation").unwrap_or_else(|| "auto".to_string());
 
         let cfg = Self {
             wifi_ssid,
@@ -78,10 +81,11 @@ impl AppConfig {
             log_level,
             ntp_server,
             clock_style,
+            rotation,
         };
 
         log::info!(
-            "Config loaded: server={}, device={}, 24h={}, brightness={}, poll={}ms, tz={}, syslog={:?}, log_level={}, ntp={:?}, clock_style={}",
+            "Config loaded: server={}, device={}, 24h={}, brightness={}, poll={}ms, tz={}, syslog={:?}, log_level={}, ntp={:?}, clock_style={}, rotation={}",
             cfg.server_url,
             cfg.device_id,
             cfg.format_24h,
@@ -92,6 +96,7 @@ impl AppConfig {
             cfg.log_level,
             cfg.ntp_server,
             cfg.clock_style,
+            cfg.rotation,
         );
 
         cfg
@@ -115,6 +120,7 @@ impl AppConfig {
             }
         }
         nvs_set_str(nvs, "clock_style", &self.clock_style)?;
+        nvs_set_str(nvs, "rotation", &self.rotation)?;
         match &self.ntp_server {
             Some(s) => nvs_set_str(nvs, "ntp_server", s)?,
             None => {

@@ -346,10 +346,84 @@ pub trait Panel {
     }
 }
 
+/// How the picture is turned on the panel, clockwise. Scenes always draw
+/// upright in screen coordinates; the renderer turns each band on its way
+/// to the panel (the CO5300 can't rotate by itself: it only mirrors X).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Rotation {
+    #[default]
+    R0,
+    R90,
+    R180,
+    R270,
+}
+
+const MAX_X: i32 = LCD_W as i32 - 1;
+const MAX_Y: i32 = LCD_H as i32 - 1;
+
+impl Rotation {
+    pub const ALL: [Rotation; 4] = [Rotation::R0, Rotation::R90, Rotation::R180, Rotation::R270];
+
+    pub fn degrees(self) -> u16 {
+        self as u16 * 90
+    }
+
+    /// Parse "0", "90", "180" or "270".
+    pub fn from_degrees(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|r| s.trim() == r.degrees().to_string())
+    }
+
+    /// Where a screen rectangle lands on the panel. Keeps even/odd
+    /// alignment, since the screen is an even number of pixels across.
+    pub fn to_panel(self, r: Rect) -> Rect {
+        match self {
+            Rotation::R0 => r,
+            Rotation::R90 => Rect::new(MAX_Y - r.y1, r.x0, MAX_Y - r.y0, r.x1),
+            Rotation::R180 => Rect::new(MAX_X - r.x1, MAX_Y - r.y1, MAX_X - r.x0, MAX_Y - r.y0),
+            Rotation::R270 => Rect::new(r.y0, MAX_X - r.x1, r.y1, MAX_X - r.x0),
+        }
+    }
+
+    /// The screen point shown at panel point `(x, y)` (e.g. a touch).
+    pub fn to_screen(self, (x, y): (i32, i32)) -> (i32, i32) {
+        match self {
+            Rotation::R0 => (x, y),
+            Rotation::R90 => (y, MAX_Y - x),
+            Rotation::R180 => (MAX_X - x, MAX_Y - y),
+            Rotation::R270 => (MAX_X - y, x),
+        }
+    }
+
+    /// Rearrange a band's pixels (row-major, `w` x `h`) into the panel
+    /// rectangle's row-major order. 90/270 transpose via `scratch`.
+    fn apply(self, buf: &mut [u16], w: usize, h: usize, scratch: &mut Vec<u16>) {
+        match self {
+            Rotation::R0 => {}
+            Rotation::R180 => buf.reverse(),
+            Rotation::R90 | Rotation::R270 => {
+                scratch.resize(buf.len(), 0);
+                // The panel rectangle is h wide and w tall.
+                for (j, out) in scratch.chunks_exact_mut(h).enumerate() {
+                    for (i, d) in out.iter_mut().enumerate() {
+                        *d = match self {
+                            Rotation::R90 => buf[(h - 1 - i) * w + j],
+                            _ => buf[i * w + (w - 1 - j)],
+                        };
+                    }
+                }
+                buf.copy_from_slice(scratch);
+            }
+        }
+    }
+}
+
 /// Renders scenes in bands, alternating between two buffers so the next
 /// band is drawn while the previous one is still being sent.
 pub struct Renderer {
     bufs: [Vec<u16>; 2],
+    rotation: Rotation,
+    /// Transpose space for 90/270; allocated on first use.
+    scratch: Vec<u16>,
 }
 
 impl Renderer {
@@ -357,7 +431,16 @@ impl Renderer {
     /// least two full rows.
     pub fn new(pixels: usize) -> Self {
         assert!(pixels >= 2 * LCD_W as usize);
-        Self { bufs: [vec![0; pixels], vec![0; pixels]] }
+        Self { bufs: [vec![0; pixels], vec![0; pixels]], rotation: Rotation::R0, scratch: Vec::new() }
+    }
+
+    pub fn rotation(&self) -> Rotation {
+        self.rotation
+    }
+
+    /// Takes effect from the next band; the caller repaints.
+    pub fn set_rotation(&mut self, r: Rotation) {
+        self.rotation = r;
     }
 
     /// Redraw `rects` from `scene` onto `panel`.
@@ -383,6 +466,8 @@ impl Renderer {
     ) -> Result<()> {
         let Some(r) = area.aligned() else { return Ok(()) };
         let rows = ((self.bufs[0].len() / r.width() as usize) & !1) as i32;
+        let Self { bufs, rotation, scratch } = self;
+        let rotation = *rotation;
         let mut which = 0;
         let mut y = r.y0;
         let result = (|| {
@@ -390,9 +475,11 @@ impl Renderer {
                 let band = Rect::new(r.x0, y, r.x1, (y + rows - 1).min(r.y1));
                 // Safe to overwrite: the panel's last `draw` returned only
                 // after the transfer from this buffer (two bands ago) ended.
-                let buf = &mut self.bufs[which][..(band.width() * band.height()) as usize];
+                let buf = &mut bufs[which][..(band.width() * band.height()) as usize];
                 fill(band, buf)?;
-                panel.draw(band, buf)?;
+                let (w, h) = (band.width() as usize, band.height() as usize);
+                rotation.apply(buf, w, h, scratch);
+                panel.draw(rotation.to_panel(band), buf)?;
                 which ^= 1;
                 y = band.y1 + 1;
             }
@@ -494,6 +581,37 @@ mod tests {
             for x in 0..g.w as usize {
                 let got = buf[(y + 2) * area.width() as usize + x + 2].swap_bytes();
                 assert_eq!(got, blend565(bg, fg, TEXT_L.alpha(g, x, y)), "({x}, {y})");
+            }
+        }
+    }
+
+    #[test]
+    fn rotation_maps_rects_and_points_consistently() {
+        let r = Rect::new(10, 20, 41, 33);
+        for rot in Rotation::ALL {
+            let p = rot.to_panel(r);
+            assert_eq!((p.width() * p.height()), r.width() * r.height(), "{rot:?}");
+            assert_eq!(p.aligned(), Some(p), "{rot:?} keeps alignment");
+            // Each panel corner shows a screen corner of `r`.
+            for (x, y) in [(p.x0, p.y0), (p.x1, p.y1)] {
+                let (sx, sy) = rot.to_screen((x, y));
+                assert!([r.x0, r.x1].contains(&sx) && [r.y0, r.y1].contains(&sy), "{rot:?}");
+            }
+        }
+        assert_eq!(Rotation::from_degrees("270"), Some(Rotation::R270));
+        assert_eq!(Rotation::from_degrees("45"), None);
+    }
+
+    #[test]
+    fn rotated_render_places_every_pixel() {
+        for rot in Rotation::ALL {
+            let mut panel = MemPanel::default();
+            let mut r = Renderer::new(480 * 6);
+            r.set_rotation(rot);
+            r.render(&mut panel, &Checker, &[Rect::new(0, 0, 479, 479), Rect::new(100, 6, 205, 99)]).unwrap();
+            for (i, &p) in panel.pixels.iter().enumerate() {
+                let (sx, sy) = rot.to_screen(((i % 480) as i32, (i / 480) as i32));
+                assert_eq!(p, ((sx ^ sy) & 0xFFFF) as u16, "{rot:?} panel pixel {i}");
             }
         }
     }

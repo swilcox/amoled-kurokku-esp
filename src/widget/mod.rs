@@ -7,6 +7,7 @@
 
 pub mod clock;
 pub mod hold;
+pub mod info;
 pub mod message;
 pub mod status;
 

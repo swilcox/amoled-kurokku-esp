@@ -38,3 +38,4 @@ pub const BTN_PWR_SENSE: i32 = 18;
 pub const ADDR_PMIC: u8 = 0x34;
 pub const ADDR_RTC: u8 = 0x51;
 pub const ADDR_TOUCH: u8 = 0x5A;
+pub const ADDR_IMU: u8 = 0x6B;
