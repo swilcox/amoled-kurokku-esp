@@ -23,10 +23,10 @@
 //! | BOOT (hold) | lock rotation where it is / back to auto-rotate |
 //! | PWR | screen off/on (any button wakes it) |
 //! | tap | info screen on/off |
-//! | swipe left / right | next / previous clock face (dismiss to the clock) |
+//! | swipe left / right | next / previous playlist entry (offline: clock face) |
 //! | swipe up / down | brighter / dimmer |
 
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -108,6 +108,8 @@ pub struct Engine {
     /// The way the IMU last said the device is standing.
     standing: Option<Rotation>,
     applied: AppliedRotation,
+    /// Device events for the network thread to report (None = offline).
+    events: Option<Sender<&'static str>>,
 }
 
 /// An SD-card slideshow in progress.
@@ -159,6 +161,7 @@ impl Engine {
             auto_rotate: fixed.is_none(),
             standing: None,
             applied,
+            events: None,
         })
     }
 
@@ -275,10 +278,12 @@ impl Engine {
         if let Some(poller) = poller {
             shared.lock().unwrap().polling = true;
             let net_shared = shared.clone();
+            let (events_tx, events) = mpsc::channel();
+            self.events = Some(events_tx);
             std::thread::Builder::new()
                 .name("net".into())
                 .stack_size(12 * 1024)
-                .spawn(move || network_loop(poller, &net_shared, wifi))
+                .spawn(move || network_loop(poller, &net_shared, wifi, events))
                 .expect("failed to spawn network thread");
         }
 
@@ -398,11 +403,26 @@ impl Engine {
         match g {
             Gesture::Tap(..) if self.overlay.is_some() => self.close_overlay(),
             Gesture::Tap(..) => self.open_info(),
-            Gesture::Swipe(Swipe::Left) => self.next_or_dismiss(1),
-            Gesture::Swipe(Swipe::Right) => self.next_or_dismiss(-1),
+            Gesture::Swipe(Swipe::Left) => self.skip(1),
+            Gesture::Swipe(Swipe::Right) => self.skip(-1),
             Gesture::Swipe(Swipe::Up) => self.step_brightness(-1, false),
             Gesture::Swipe(Swipe::Down) => self.step_brightness(1, false),
             Gesture::LongPress(..) => {}
+        }
+    }
+
+    /// Swipe: move along the server's playlist; offline (or with the server
+    /// unreachable), change the clock face instead.
+    fn skip(&mut self, step: isize) {
+        let online = {
+            let s = self.shared.lock().unwrap();
+            s.polling && s.failures == 0 && s.last_ok.is_some()
+        };
+        match &self.events {
+            Some(tx) if online && self.overlay.is_none() => {
+                let _ = tx.send(if step > 0 { "next" } else { "prev" });
+            }
+            _ => self.next_or_dismiss(step),
         }
     }
 
@@ -607,7 +627,7 @@ impl Engine {
     }
 }
 
-fn network_loop(mut poller: HttpPoller, shared: &Mutex<Shared>, wifi: Option<SharedWifi>) {
+fn network_loop(mut poller: HttpPoller, shared: &Mutex<Shared>, wifi: Option<SharedWifi>, events: Receiver<&'static str>) {
     // The server returns the *current* desired state on every poll, so only
     // forward changes: re-sending would restart the active widget, and
     // re-sending brightness would undo a BOOT-button adjustment.
@@ -669,6 +689,18 @@ fn network_loop(mut poller: HttpPoller, shared: &Mutex<Shared>, wifi: Option<Sha
             );
         }
 
-        std::thread::sleep(poller.interval());
+        // Sleep until the next poll, or until an event: report it and poll
+        // straight away so its effect shows without waiting.
+        match events.recv_timeout(poller.interval()) {
+            Ok(event) => {
+                log::info!("event: {event}");
+                if let Err(e) = poller.send_event(event) {
+                    log::warn!("event {event} failed: {e}");
+                }
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+            // The display thread never drops its sender; just keep polling.
+            Err(RecvTimeoutError::Disconnected) => std::thread::sleep(poller.interval()),
+        }
     }
 }

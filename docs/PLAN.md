@@ -100,7 +100,7 @@ Mapping as built (the table in `src/engine.rs` is the reference):
 | **BOOT** hold | lock rotation where it is / back to auto (persisted as `rotation`) |
 | **PWR** | screen off; any button wakes it. *(Hold 4 s: hardware power-off.)* |
 | tap | info screen on/off |
-| swipe left / right | next / previous clock face (dismiss to the clock) |
+| swipe left / right | next / previous playlist entry (server unreachable: clock face) |
 | swipe up / down | brighter / dimmer |
 
 - Buttons report short presses on release and long presses (800 ms) while still held (`buttons::PressTracker`).
@@ -108,7 +108,8 @@ Mapping as built (the table in `src/engine.rs` is the reference):
 - **Rotation** is done in software: the CO5300 only mirrors X, so the renderer turns each band on its way out (`gfx::Rotation`: 180° reverses the band; 90/270 transpose through a 30 KB scratch buffer). Touches map back through the same rotation. Auto-rotate needs 0.6 g in the screen plane held for 1 s; flat or diagonal keeps the current rotation. Config `rotation`: `auto` (default) or fixed `0|90|180|270`.
 - Overlays (info, notices) cover the active widget; server changes wait until they close, then the widget (or image) is repainted.
 - ✅ **Done 2026-10-23** (firmware). All controls and all four orientations checked on the device.
-- Next: report events to the server (`POST …/events`) so it can react, e.g. "skip playlist entry" or "ack alert".
+- **Device events**: swipes `POST /api/v1/devices/{id}/events {"event":"next"|"prev"}`; the server moves the device along its playlist (fresh duration, cron-inactive entries passed over) and the network thread polls right away, so the change shows in well under a second. Checked on the device against the server branch `device-events`.
+- Later: "ack alert" (touch long press is still free).
 
 ### Phase 6: Server and scheduling
 - Extend **kurokku-esp-server** rather than writing a new one. It already has playlists, cron entries, alerts, day/night brightness from lat/long (`internal/solar`), OTA and the admin UI.

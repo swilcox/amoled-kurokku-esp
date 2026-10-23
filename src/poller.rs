@@ -1,4 +1,5 @@
-//! HTTP polling of kurokku-esp-server (`GET /api/v1/devices/{id}/instruction`).
+//! HTTP polling of kurokku-esp-server (`GET /api/v1/devices/{id}/instruction`),
+//! and device events (`POST /api/v1/devices/{id}/events`).
 
 use std::time::Duration;
 
@@ -15,29 +16,47 @@ pub const FIRMWARE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "%2B", env
 
 pub struct HttpPoller {
     url: String,
+    events_url: String,
     poll_interval: Duration,
+}
+
+fn connect() -> Result<EspHttpConnection> {
+    // The TLS cert bundle makes https:// work; harmless for http://.
+    EspHttpConnection::new(&HttpConfig {
+        timeout: Some(Duration::from_secs(10)),
+        crt_bundle_attach: Some(esp_idf_svc::sys::esp_crt_bundle_attach),
+        ..Default::default()
+    })
+    .map_err(|e| anyhow::anyhow!("HTTP connection failed: {e}"))
 }
 
 impl HttpPoller {
     pub fn new(base_url: &str, device_id: &str, poll_interval: Duration) -> Self {
-        let url = format!(
-            "{}/api/v1/devices/{}/instruction?display_type={}&firmware_version={}",
-            base_url.trim_end_matches('/'),
-            device_id,
-            DISPLAY_TYPE,
-            FIRMWARE_VERSION
-        );
-        Self { url, poll_interval }
+        let base = format!("{}/api/v1/devices/{}", base_url.trim_end_matches('/'), device_id);
+        let url = format!("{base}/instruction?display_type={DISPLAY_TYPE}&firmware_version={FIRMWARE_VERSION}");
+        Self { url, events_url: format!("{base}/events"), poll_interval }
+    }
+
+    /// Report an input event (e.g. "next"); the effect arrives on the next
+    /// poll.
+    pub fn send_event(&self, event: &str) -> Result<()> {
+        let body = serde_json::to_vec(&serde_json::json!({ "event": event }))?;
+        let len = body.len().to_string();
+        let mut conn = connect()?;
+        let headers = [("Content-Type", "application/json"), ("Content-Length", len.as_str())];
+        conn.initiate_request(esp_idf_svc::http::Method::Post, &self.events_url, &headers)
+            .map_err(|e| anyhow::anyhow!("HTTP request failed: {e}"))?;
+        conn.write_all(&body).map_err(|e| anyhow::anyhow!("HTTP write failed: {e}"))?;
+        conn.initiate_response()
+            .map_err(|e| anyhow::anyhow!("HTTP response failed: {e}"))?;
+        match conn.status() {
+            200..=299 => Ok(()),
+            s => anyhow::bail!("server returned status {s}"),
+        }
     }
 
     pub fn poll(&mut self) -> Result<ServerResponse> {
-        // The TLS cert bundle makes https:// work; harmless for http://.
-        let mut conn = EspHttpConnection::new(&HttpConfig {
-            timeout: Some(Duration::from_secs(10)),
-            crt_bundle_attach: Some(esp_idf_svc::sys::esp_crt_bundle_attach),
-            ..Default::default()
-        })
-        .map_err(|e| anyhow::anyhow!("HTTP connection failed: {e}"))?;
+        let mut conn = connect()?;
 
         conn.initiate_request(esp_idf_svc::http::Method::Get, &self.url, &[])
             .map_err(|e| anyhow::anyhow!("HTTP request failed: {e}"))?;
