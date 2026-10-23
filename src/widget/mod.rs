@@ -6,6 +6,7 @@
 //! in which case the engine falls back to the clock.
 
 pub mod clock;
+pub mod hold;
 pub mod message;
 pub mod status;
 

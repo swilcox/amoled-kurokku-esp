@@ -43,6 +43,19 @@ pub enum Instruction {
     Ota {
         url: String,
     },
+    /// Show a QOI image: `url` is http(s)://… or sd:/path/on/card.qoi.
+    /// Images larger than the screen are center-cropped; smaller ones are
+    /// centered on black.
+    Image {
+        url: String,
+    },
+    /// Cycle through the .qoi images in a directory on the SD card.
+    Slideshow {
+        #[serde(default = "default_slideshow_path")]
+        path: String,
+        #[serde(default = "default_slideshow_interval")]
+        interval_secs: u32,
+    },
     /// Instruction types this display can't show (raw_pixel, raw_segment,
     /// animation, ...). The device falls back to the clock.
     #[serde(other)]
@@ -57,6 +70,12 @@ fn default_scroll_speed() -> u32 {
 }
 fn default_repeats() -> i32 {
     1
+}
+fn default_slideshow_path() -> String {
+    "sd:/images".into()
+}
+fn default_slideshow_interval() -> u32 {
+    10
 }
 
 /// Remote config update delivered alongside an instruction. Omitted fields
@@ -153,6 +172,14 @@ mod tests {
         assert_eq!(r.instruction, None);
         let r = parse(r#"{"config":{"tz":"EST5EDT,M3.2.0,M11.1.0"}}"#);
         assert_eq!(r.config.unwrap().tz.as_deref(), Some("EST5EDT,M3.2.0,M11.1.0"));
+    }
+
+    #[test]
+    fn image_and_slideshow() {
+        let r = parse(r#"{"instruction":{"type":"image","url":"http://x/cat.qoi","duration_secs":30}}"#);
+        assert_eq!(r.instruction, Some(Instruction::Image { url: "http://x/cat.qoi".into() }));
+        let r = parse(r#"{"instruction":{"type":"slideshow"}}"#);
+        assert_eq!(r.instruction, Some(Instruction::Slideshow { path: "sd:/images".into(), interval_secs: 10 }));
     }
 
     #[test]

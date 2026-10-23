@@ -24,7 +24,8 @@ fn main() -> anyhow::Result<()> {
     use amoled_kurokku_esp::engine::{Engine, Hardware};
     use amoled_kurokku_esp::poller::{HttpPoller, FIRMWARE_VERSION};
     use amoled_kurokku_esp::widget::status::Status;
-    use amoled_kurokku_esp::{config, ota, pmic, rtc, udp_log, wifi};
+    use amoled_kurokku_esp::gfx::{Renderer, Solid, SCREEN};
+    use amoled_kurokku_esp::{assets, color, config, media, ota, pmic, rtc, udp_log, wifi};
 
     /// Attempts at the boot-time join. A failed join costs ~19 s, and the
     /// hopeless case (SSID absent) fails identically every time, so two.
@@ -68,6 +69,27 @@ fn main() -> anyhow::Result<()> {
     let mut lcd = Co5300::new(Engine::lcd_max_pixels())?;
     pmic::reset_display(&mut i2c)?;
     lcd.init()?;
+
+    // Fonts and artwork come from an assets partition. Without the pack this
+    // firmware was built with there is nothing to draw with: show red, and
+    // if this is a fresh OTA app, let the bootloader roll back.
+    if let Err(e) = assets::init() {
+        log::error!("{e}");
+        let mut r = Renderer::new(Engine::lcd_max_pixels());
+        let _ = r.render(&mut lcd, &Solid(color::RED), &[SCREEN]);
+        ota::rollback_if_unverified();
+        loop {
+            std::thread::sleep(Duration::from_secs(10));
+            log::error!("halted: asset pack missing; flash assets.bin (just flash)");
+        }
+    }
+    if let Err(e) = ota::mark_running_valid() {
+        log::warn!("{e}");
+    }
+    // Optional: images for `sd:` URLs and slideshows.
+    if let Err(e) = media::mount_sd() {
+        log::info!("{e} (no card?)");
+    }
     let utc = rtc::init_system_time(&mut i2c)?;
     log::info!("time from RTC: {utc:?} UTC");
 

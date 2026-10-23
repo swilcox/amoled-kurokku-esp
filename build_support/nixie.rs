@@ -1,6 +1,7 @@
 //! Build-time nixie tube art.
 //!
-//! Emits `$OUT_DIR/nixie.rs` (included by `src/sprites.rs`) plus data blobs:
+//! Emits `$OUT_DIR/nixie.rs` (included by `src/sprites.rs`); the data goes
+//! into the asset pack:
 //! - one tube background (RGB565): dark glass with reflections, the anode
 //!   mesh, all ten unlit cathodes stacked behind each other, and the base;
 //! - per digit, a 4-bit glow intensity map. At runtime it is mapped through
@@ -14,6 +15,7 @@
 use std::fmt::Write as _;
 use std::path::Path;
 
+use super::assetpack::Pack;
 use super::segments::blur;
 
 pub const TUBE_W: usize = 98;
@@ -189,7 +191,7 @@ fn dot_art() -> (Vec<u16>, Vec<f32>) {
     (bg, glow_of(&core, w, h))
 }
 
-pub fn generate(manifest_dir: &Path, out_dir: &Path, digit_font: &str, digit_px: f32) {
+pub fn generate(manifest_dir: &Path, out_dir: &Path, pack: &mut Pack, digit_font: &str, digit_px: f32) {
     let path = manifest_dir.join(digit_font);
     println!("cargo:rerun-if-changed={}", path.display());
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
@@ -199,27 +201,20 @@ pub fn generate(manifest_dir: &Path, out_dir: &Path, digit_font: &str, digit_px:
     let masks: Vec<Vec<f32>> = ('0'..='9').map(|d| digit_mask(&font, digit_px, d)).collect();
     let stacked: Vec<f32> = (0..TUBE_W * TUBE_H).map(|i| masks.iter().map(|m| m[i]).fold(0.0, f32::max)).collect();
 
-    let write565 = |name: &str, px: &[u16]| {
-        let bytes: Vec<u8> = px.iter().flat_map(|p| p.to_le_bytes()).collect();
-        std::fs::write(out_dir.join(name), bytes).unwrap();
-    };
-    write565("nixie_tube.bin", &tube_background(&stacked));
-    for (d, m) in masks.iter().enumerate() {
-        std::fs::write(out_dir.join(format!("nixie_glow{d}.a4")), pack_glow(&glow_of(m, TUBE_W, TUBE_H), TUBE_W)).unwrap();
-    }
+    let le = |px: &[u16]| -> Vec<u8> { px.iter().flat_map(|p| p.to_le_bytes()).collect() };
+    let tube = pack.add(&le(&tube_background(&stacked)));
+    let glows: Vec<String> = masks.iter().map(|m| pack.add(&pack_glow(&glow_of(m, TUBE_W, TUBE_H), TUBE_W))).collect();
     let (dot_bg, dot_glow) = dot_art();
-    write565("nixie_dot.bin", &dot_bg);
-    std::fs::write(out_dir.join("nixie_dot_glow.a4"), pack_glow(&dot_glow, DOT_W)).unwrap();
+    let dot = pack.add(&le(&dot_bg));
+    let dot_glow = pack.add(&pack_glow(&dot_glow, DOT_W));
 
     let palette: Vec<String> = (0..16).map(|q| format!("0x{:04X}", to565(ramp((q as f32 / 15.0).powi(2))))).collect();
-    let inc = |f: &str| format!("include_bytes!(concat!(env!(\"OUT_DIR\"), \"/{f}\"))");
     let mut src = String::new();
     writeln!(src, "pub const TUBE_W: usize = {TUBE_W};\npub const TUBE_H: usize = {TUBE_H};").unwrap();
     writeln!(src, "pub const DOT_W: usize = {DOT_W};\npub const DOT_H: usize = {DOT_H};").unwrap();
-    writeln!(src, "/// Tube background, RGB565 little-endian, row-major.\npub static TUBE: &[u8] = {};", inc("nixie_tube.bin")).unwrap();
-    let glows: Vec<String> = (0..10).map(|d| inc(&format!("nixie_glow{d}.a4"))).collect();
-    writeln!(src, "/// Glow intensity per digit, 4-bit, sqrt-encoded.\npub static GLOW: [&[u8]; 10] = [{}];", glows.join(", ")).unwrap();
-    writeln!(src, "pub static DOT: &[u8] = {};\npub static DOT_GLOW: &[u8] = {};", inc("nixie_dot.bin"), inc("nixie_dot_glow.a4")).unwrap();
+    writeln!(src, "/// Tube background, RGB565 little-endian, row-major.\npub static TUBE: crate::assets::Blob = {tube};").unwrap();
+    writeln!(src, "/// Glow intensity per digit, 4-bit, sqrt-encoded.\npub static GLOW: [crate::assets::Blob; 10] = [{}];", glows.join(", ")).unwrap();
+    writeln!(src, "pub static DOT: crate::assets::Blob = {dot};\npub static DOT_GLOW: crate::assets::Blob = {dot_glow};").unwrap();
     writeln!(src, "/// Glow color per 4-bit level, RGB565.\npub static PALETTE: [u16; 16] = [{}];", palette.join(", ")).unwrap();
     std::fs::write(out_dir.join("nixie.rs"), src).unwrap();
 }

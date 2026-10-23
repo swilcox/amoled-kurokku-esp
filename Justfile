@@ -38,8 +38,11 @@ _flash profile port:
     dir=target/riscv32imac-esp-espidf/{{profile}}
     boot=($dir/bootloader.bin $dir/build/esp-idf-sys*/out/build/bootloader/bootloader.bin $dir/build/esp-idf-sys/*/out/build/bootloader/bootloader.bin)
     [ ${#boot[@]} -gt 0 ] || { echo "bootloader.bin not found — build first"; exit 1; }
-    espflash flash \
-        {{ if port != "" { "--port " + port } else { "" } }} \
+    port_arg="{{ if port != "" { "--port " + port } else { "" } }}"
+    # Fonts and artwork go to assets_0 (src/assets.rs); the firmware maps
+    # whichever assets slot matches the pack it was built with.
+    espflash write-bin $port_arg 0x620000 $dir/assets.bin
+    espflash flash $port_arg \
         --bootloader "${boot[0]}" \
         --partition-table partitions.csv \
         --erase-data-parts ota \

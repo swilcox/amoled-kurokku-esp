@@ -82,9 +82,11 @@ Throughput: 40 MHz × 4 lines works out to about 23 ms per full frame in theory,
 - Later ideas: color options per face, nixie cathode-cycling, date/temperature complications.
 
 ### Phase 4: Pictures
-- `image` instruction: `{type:"image", url, fit}` → stream QOI over HTTP to the screen.
-- microSD: mount FAT on the shared SPI bus, run a slideshow from `/sdcard/images/`, and make it a server-selectable source (`{type:"slideshow", source:"sd", interval_secs}`).
-- Server: image library — add images on the server (admin UI), which converts them (resize/crop to 480², encode QOI), caches them and serves them by URL. The device only ever pulls; it never accepts uploads.
+- **Assets partition** (prerequisite): fonts and face art moved out of the app (2.68 → 1.54 MB) into an asset pack built by `build_support/assetpack.rs` and memory-mapped at boot. Two slots, `assets_0`/`assets_1` (A/B like OTA): the firmware maps whichever holds the pack hash it was built with. OTA of `x.bin` also fetches `x.assets.bin` (if published) into the inactive slot, hash-verified, header written last. App rollback is enabled: an OTA'd app without its pack reboots into the previous app. Both paths tested on hardware.
+- **Images**: QOI, decoded row by row straight onto the panel (`src/qoi.rs`, `src/image.rs`) — no frame buffer; the panel holds the picture. Centered on black if small, center-cropped if large. `{type:"image", url}` with `http(s)://…` or `sd:/path.qoi`. ~0.9 s per 480² photo over WiFi, 0.6–0.8 s from SD.
+- **microSD**: mounted at `/sdcard` as a second device on the display's SPI bus. `{type:"slideshow", path:"sd:/images", interval_secs:10}` cycles the `.qoi` files in a folder.
+- `tools/img2qoi.py`: any JPEG/PNG/HEIC → 480² QOI (cover-crop, or `--fit` to letterbox).
+- Server (next): `image`/`slideshow` playlist widgets, plus an image library that converts uploads to 480² QOI and serves them by URL. The device only ever pulls.
 - Later: animated images (QOI frame sequences), JPEG from SD.
 
 ### Phase 5: Interaction

@@ -22,7 +22,8 @@ pub struct Font {
     pub descent: i16,
     /// Sorted by `ch`.
     pub glyphs: &'static [Glyph],
-    pub data: &'static [u8],
+    /// 4-bit alpha rows for all glyphs, in the asset pack.
+    pub data: crate::assets::Blob,
 }
 
 impl Font {
@@ -44,7 +45,7 @@ impl Font {
     /// Alpha (0-15) of pixel (x, y) within `g`'s bitmap.
     pub fn alpha(&self, g: &Glyph, x: usize, y: usize) -> u8 {
         let stride = (g.w as usize).div_ceil(2);
-        let b = self.data[g.offset as usize + y * stride + x / 2];
+        let b = self.data.bytes()[g.offset as usize + y * stride + x / 2];
         if x % 2 == 0 {
             b >> 4
         } else {

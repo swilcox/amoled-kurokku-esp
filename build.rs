@@ -1,5 +1,7 @@
 use std::process::Command;
 
+#[path = "build_support/assetpack.rs"]
+mod assetpack;
 #[path = "build_support/fontgen.rs"]
 mod fontgen;
 #[path = "build_support/nixie.rs"]
@@ -120,8 +122,11 @@ fn main() {
         glow_peak: 0.45,
         colon_w: 16.0,
     }));
-    fontgen::emit(std::path::Path::new(&out_dir), sets);
-    nixie::generate(root, std::path::Path::new(&out_dir), "assets/fonts/FiraSans-ExtraLight.ttf", 205.0);
+    let out = std::path::Path::new(&out_dir);
+    let mut pack = assetpack::Pack::default();
+    fontgen::emit(out, &mut pack, sets);
+    nixie::generate(root, out, &mut pack, "assets/fonts/FiraSans-ExtraLight.ttf", 205.0);
+    pack.finish(out);
 
     // Keep partitions.csv in sync with esp-idf-sys's cmake build dirs.
     // The cmake build resolves CONFIG_PARTITION_TABLE_CUSTOM_FILENAME relative

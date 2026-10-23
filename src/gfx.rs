@@ -229,7 +229,11 @@ impl<'a> Canvas<'a> {
             return;
         };
         let stride = (g.w as usize).div_ceil(2);
-        let data = &font.data[g.offset as usize..];
+        // No asset pack mapped: draw nothing rather than panic.
+        let Some(data) = font.data.bytes().get(g.offset as usize..) else { return };
+        if data.len() < stride * g.h as usize {
+            return;
+        }
         let fg = to_wire(color);
         let mut lut = EdgeLut::new(color);
         let (sx0, w) = ((r.x0 - gx) as usize, r.width() as usize);
@@ -264,6 +268,9 @@ impl<'a> Canvas<'a> {
     pub fn blit_glow(&mut self, x: i32, y: i32, w: usize, h: usize, bg: &[u8], layers: &[(&[u8], u8)], palette: &[u16; 16]) {
         let Some(r) = self.visible(Rect::from_size(x, y, w as i32, h as i32)) else { return };
         let stride = w.div_ceil(2);
+        if bg.len() < 2 * w * h || layers.iter().any(|(g, _)| g.len() < stride * h) {
+            return; // no asset pack mapped
+        }
         for py in r.y0..=r.y1 {
             let sy = (py - y) as usize;
             let start = self.index(r.x0, py);
@@ -317,6 +324,15 @@ pub trait Scene {
     fn draw(&self, canvas: &mut Canvas);
 }
 
+/// A single color everywhere.
+pub struct Solid(pub u16);
+
+impl Scene for Solid {
+    fn draw(&self, c: &mut Canvas) {
+        c.fill(c.area(), self.0);
+    }
+}
+
 /// A display that accepts rectangles of pixels in wire (MSB-first) order.
 pub trait Panel {
     /// Start sending `pixels` to `area`. May return while the transfer is
@@ -346,21 +362,39 @@ impl Renderer {
 
     /// Redraw `rects` from `scene` onto `panel`.
     pub fn render<S: Scene + ?Sized>(&mut self, panel: &mut impl Panel, scene: &S, rects: &[Rect]) -> Result<()> {
+        for r in rects.iter().filter_map(Rect::aligned) {
+            self.stream(panel, r, |band, buf| {
+                scene.draw(&mut Canvas::new(band, buf));
+                Ok(())
+            })?;
+        }
+        Ok(())
+    }
+
+    /// Fill `area` (aligned, top to bottom) band by band: `fill` writes each
+    /// band's pixels, in wire order, into the buffer it's given. Bands are
+    /// visited in order, so `fill` can consume a sequential source such as
+    /// an image decoder.
+    pub fn stream(
+        &mut self,
+        panel: &mut impl Panel,
+        area: Rect,
+        mut fill: impl FnMut(Rect, &mut [u16]) -> Result<()>,
+    ) -> Result<()> {
+        let Some(r) = area.aligned() else { return Ok(()) };
+        let rows = ((self.bufs[0].len() / r.width() as usize) & !1) as i32;
         let mut which = 0;
+        let mut y = r.y0;
         let result = (|| {
-            for r in rects.iter().filter_map(Rect::aligned) {
-                let rows = ((self.bufs[0].len() / r.width() as usize) & !1) as i32;
-                let mut y = r.y0;
-                while y <= r.y1 {
-                    let band = Rect::new(r.x0, y, r.x1, (y + rows - 1).min(r.y1));
-                    // Safe to overwrite: the panel's last `draw` returned only
-                    // after the transfer from this buffer (two bands ago) ended.
-                    let buf = &mut self.bufs[which][..(band.width() * band.height()) as usize];
-                    scene.draw(&mut Canvas::new(band, buf));
-                    panel.draw(band, buf)?;
-                    which ^= 1;
-                    y = band.y1 + 1;
-                }
+            while y <= r.y1 {
+                let band = Rect::new(r.x0, y, r.x1, (y + rows - 1).min(r.y1));
+                // Safe to overwrite: the panel's last `draw` returned only
+                // after the transfer from this buffer (two bands ago) ended.
+                let buf = &mut self.bufs[which][..(band.width() * band.height()) as usize];
+                fill(band, buf)?;
+                panel.draw(band, buf)?;
+                which ^= 1;
+                y = band.y1 + 1;
             }
             Ok(())
         })();

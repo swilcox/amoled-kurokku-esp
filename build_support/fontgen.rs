@@ -4,7 +4,7 @@
 //! Glyphs come from TTFs (rasterized with `fontdue`) or from shapes drawn by
 //! other build-support modules (e.g. 7-segment LED segments). The output is
 //! `$OUT_DIR/fonts.rs` (one `Font` static per set, included by
-//! `src/fonts.rs`) plus one `.a4` data blob per set.
+//! `src/fonts.rs`); bitmap data goes into the asset pack.
 
 use std::fmt::Write as _;
 use std::path::Path;
@@ -79,7 +79,7 @@ pub fn from_ttf(manifest_dir: &Path, spec: &FontSpec) -> GlyphSet {
 }
 
 /// Write `fonts.rs` and the `.a4` blobs for all sets.
-pub fn emit(out_dir: &Path, sets: Vec<GlyphSet>) {
+pub fn emit(out_dir: &Path, pack: &mut super::assetpack::Pack, sets: Vec<GlyphSet>) {
     let mut src = String::new();
     for mut set in sets {
         set.glyphs.sort_by_key(|g| g.ch);
@@ -104,11 +104,10 @@ pub fn emit(out_dir: &Path, sets: Vec<GlyphSet>) {
             .unwrap();
         }
 
-        let blob = format!("{}.a4", set.name.to_lowercase());
-        std::fs::write(out_dir.join(&blob), &data).unwrap();
+        let blob = pack.add(&data);
         writeln!(
             src,
-            "pub static {}: Font = Font {{\n    px: {},\n    ascent: {},\n    descent: {},\n    glyphs: &[\n{glyphs}    ],\n    data: include_bytes!(concat!(env!(\"OUT_DIR\"), \"/{blob}\")),\n}};\n",
+            "pub static {}: Font = Font {{\n    px: {},\n    ascent: {},\n    descent: {},\n    glyphs: &[\n{glyphs}    ],\n    data: {blob},\n}};\n",
             set.name, set.px, set.ascent, set.descent,
         )
         .unwrap();

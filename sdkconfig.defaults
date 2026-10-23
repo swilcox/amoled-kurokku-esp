@@ -14,3 +14,10 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 # Enable HTTPS for OTA downloads
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
+
+# A freshly OTA'd app must mark itself valid (once its asset pack is mapped),
+# otherwise the bootloader rolls back to the previous app on the next reset.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# Long file names on the SD card (not just 8.3).
+CONFIG_FATFS_LFN_HEAP=y

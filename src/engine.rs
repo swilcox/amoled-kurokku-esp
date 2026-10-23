@@ -26,8 +26,8 @@ use crate::gfx::Renderer;
 use crate::poller::HttpPoller;
 use crate::protocol::{panel_brightness, parse_color, scroll_px_per_ms, ConfigUpdate, Instruction};
 use crate::widget::message::{font_for, Direction, Message};
-use crate::widget::{clock::Clock, status::Status, Step, Widget};
-use crate::{rtc, udp_log, wifi};
+use crate::widget::{clock::Clock, hold::Hold, status::Status, Step, Widget};
+use crate::{image, media, rtc, udp_log, wifi};
 
 pub type SharedWifi = Arc<Mutex<BlockingWifi<EspWifi<'static>>>>;
 
@@ -70,6 +70,15 @@ pub struct Engine {
     panel_on: bool,
     boot: Instant,
     prof: Profile,
+    slideshow: Option<Slideshow>,
+}
+
+/// An SD-card slideshow in progress.
+struct Slideshow {
+    images: Vec<String>,
+    next: usize,
+    interval_ms: u32,
+    next_at_ms: u32,
 }
 
 #[derive(Default)]
@@ -101,6 +110,7 @@ impl Engine {
             panel_on: true,
             boot: Instant::now(),
             prof: Profile::default(),
+            slideshow: None,
         })
     }
 
@@ -121,6 +131,7 @@ impl Engine {
     }
 
     fn show_clock(&mut self) {
+        self.slideshow = None;
         let style = self.server_style.as_deref().unwrap_or(&self.local_style);
         self.widget = Box::new(Clock::new(self.format_24h, Some(style)));
         self.is_clock = true;
@@ -227,6 +238,7 @@ impl Engine {
                 self.on_button(b);
             }
 
+            self.step_slideshow();
             self.step();
             FreeRtos::delay_ms(self.widget.frame_ms().clamp(1, 20));
         }
@@ -263,6 +275,7 @@ impl Engine {
     }
 
     fn apply_instruction(&mut self, inst: Instruction) {
+        self.slideshow = None;
         match inst {
             Instruction::Clock { format_24h, style } => {
                 self.format_24h = format_24h;
@@ -278,10 +291,56 @@ impl Engine {
                 self.is_clock = false;
             }
             Instruction::Ota { url } => self.ota(&url),
+            Instruction::Image { url } => self.show_image(&url),
+            Instruction::Slideshow { path, interval_secs } => match media::list_images(&path) {
+                Ok(images) if !images.is_empty() => {
+                    log::info!("slideshow: {} images in {path}", images.len());
+                    self.slideshow = Some(Slideshow {
+                        images,
+                        next: 0,
+                        interval_ms: interval_secs.max(1) * 1000,
+                        next_at_ms: self.now_ms(),
+                    });
+                }
+                Ok(_) => self.show(Box::new(Status::new("NO IMAGES", &path, Some(5000)))),
+                Err(e) => {
+                    log::warn!("slideshow: {e}");
+                    self.show(Box::new(Status::new("NO IMAGES", &path, Some(5000))));
+                }
+            },
             Instruction::Unsupported => {
                 log::warn!("unsupported instruction type; showing clock");
                 self.show_clock();
             }
+        }
+    }
+
+    /// Stream an image onto the panel and hold it there.
+    fn show_image(&mut self, url: &str) {
+        let started = Instant::now();
+        let result = media::open(url).and_then(|r| image::show(&mut self.renderer, &mut self.hw.lcd, r));
+        match result {
+            Ok(()) => {
+                log::info!("image {url}: {} ms", started.elapsed().as_millis());
+                self.widget = Box::new(Hold);
+                self.is_clock = false;
+            }
+            Err(e) => {
+                log::warn!("image {url}: {e}");
+                self.show(Box::new(Status::new("IMAGE ERROR", &e.to_string(), Some(5000))));
+            }
+        }
+    }
+
+    /// Advance a running slideshow when its next image is due.
+    fn step_slideshow(&mut self) {
+        let now = self.now_ms();
+        let Some(s) = &mut self.slideshow else { return };
+        if now.wrapping_sub(s.next_at_ms) as i32 >= 0 {
+            let url = s.images[s.next % s.images.len()].clone();
+            s.next = (s.next + 1) % s.images.len();
+            s.next_at_ms = now.wrapping_add(s.interval_ms);
+            self.show_image(&url);
         }
     }
 

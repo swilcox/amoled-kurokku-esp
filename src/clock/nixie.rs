@@ -202,18 +202,19 @@ impl Scene for NixieFace {
             });
             let mut layers: Vec<(&[u8], u8)> = Vec::with_capacity(2);
             if let Some(d) = tube.digit {
-                layers.push((GLOW[d as usize], p));
+                layers.push((GLOW[d as usize].bytes(), p));
             }
             if let Some(Some(d)) = tube.fade.as_ref().map(|f| f.from) {
-                layers.push((GLOW[d as usize], 15 - p));
+                layers.push((GLOW[d as usize].bytes(), 15 - p));
             }
-            c.blit_glow(x, y, TUBE_W, TUBE_H, TUBE, &layers, &PALETTE);
+            c.blit_glow(x, y, TUBE_W, TUBE_H, TUBE.bytes(), &layers, &PALETTE);
         }
 
         let on = Self::colon_on(&self.t);
         for (x, y) in self.dot_positions() {
-            let layers: &[(&[u8], u8)] = if on { &[(DOT_GLOW, 15)] } else { &[] };
-            c.blit_glow(x + dx, y + dy, DOT_W, DOT_H, DOT, layers, &PALETTE);
+            let glow = [(DOT_GLOW.bytes(), 15)];
+            let layers: &[(&[u8], u8)] = if on { &glow } else { &[] };
+            c.blit_glow(x + dx, y + dy, DOT_W, DOT_H, DOT.bytes(), layers, &PALETTE);
         }
 
         if c.area().intersect(&self.secs_rect.translate(dx, dy)).is_some() {
@@ -253,6 +254,6 @@ mod tests {
         let f = NixieFace::new(true);
         assert!(f.tubes[0].x >= 0 && f.tubes[3].x + TUBE_W as i32 <= 480);
         assert!(f.date_rect.y0 >= 0 && f.secs_rect.y1 < 480);
-        assert_eq!(GLOW[0].len(), TUBE_W.div_ceil(2) * TUBE_H);
+        assert_eq!(GLOW[0].bytes().len(), TUBE_W.div_ceil(2) * TUBE_H);
     }
 }

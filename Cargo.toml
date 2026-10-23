@@ -34,6 +34,8 @@ esp-idf-svc = "0.53"
 # Host-only: the `preview` example writes rendered faces to PNG.
 [target.'cfg(not(target_os = "espidf"))'.dev-dependencies]
 png = "0.18"
+# Reference encoder for testing src/qoi.rs.
+qoi = "0.4"
 
 [build-dependencies]
 embuild = { version = "0.33", features = ["espidf"] }
