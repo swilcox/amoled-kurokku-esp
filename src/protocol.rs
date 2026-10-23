@@ -43,7 +43,8 @@ pub enum Instruction {
     Ota {
         url: String,
     },
-    /// Show a QOI image: `url` is http(s)://… or sd:/path/on/card.qoi.
+    /// Show a QOI image: `url` is http(s)://…, sd:/path/on/card.qoi, or a
+    /// path relative to the server (its image library: /api/v1/images/…).
     /// Images larger than the screen are center-cropped; smaller ones are
     /// centered on black.
     Image {

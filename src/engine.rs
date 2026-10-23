@@ -315,9 +315,15 @@ impl Engine {
         }
     }
 
-    /// Stream an image onto the panel and hold it there.
+    /// Stream an image onto the panel and hold it there. A URL starting
+    /// with `/` (the server's image library) is relative to the server.
     fn show_image(&mut self, url: &str) {
         let started = Instant::now();
+        let url = match url.starts_with('/') {
+            true => format!("{}{url}", self.cfg.server_url.trim_end_matches('/')),
+            false => url.to_string(),
+        };
+        let url = url.as_str();
         let result = media::open(url).and_then(|r| image::show(&mut self.renderer, &mut self.hw.lcd, r));
         match result {
             Ok(()) => {
