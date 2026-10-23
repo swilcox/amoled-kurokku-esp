@@ -40,6 +40,15 @@ impl Rect {
         self.y1 - self.y0 + 1
     }
 
+    pub const fn translate(&self, dx: i32, dy: i32) -> Rect {
+        Rect::new(self.x0 + dx, self.y0 + dy, self.x1 + dx, self.y1 + dy)
+    }
+
+    /// Smallest rectangle containing both.
+    pub fn union(&self, o: &Rect) -> Rect {
+        Rect::new(self.x0.min(o.x0), self.y0.min(o.y0), self.x1.max(o.x1), self.y1.max(o.y1))
+    }
+
     pub fn intersect(&self, o: &Rect) -> Option<Rect> {
         let r = Rect::new(self.x0.max(o.x0), self.y0.max(o.y0), self.x1.min(o.x1), self.y1.min(o.y1));
         (r.x0 <= r.x1 && r.y0 <= r.y1).then_some(r)
@@ -70,22 +79,70 @@ pub fn blend565(bg: u16, fg: u16, a: u8) -> u16 {
     }
 }
 
+/// Saturating per-channel add of two RGB565 colors.
+pub fn add565(a: u16, b: u16) -> u16 {
+    let ch = |shift: u32, mask: u16| ((a >> shift & mask) + (b >> shift & mask)).min(mask) << shift;
+    ch(11, 0x1F) | ch(5, 0x3F) | ch(0, 0x1F)
+}
+
 /// A window onto the screen backed by a row-major buffer of pixels in wire
 /// (MSB-first) order, so a finished band can go to the panel as-is. Colors
-/// passed in are ordinary RGB565. Drawing outside `area` is clipped.
+/// passed in are ordinary RGB565. Drawing is clipped to `area` and to an
+/// optional clip rectangle.
 pub struct Canvas<'a> {
     area: Rect,
+    /// `area` ∩ the clip rectangle; None = nothing is visible.
+    clip: Option<Rect>,
     buf: &'a mut [u16],
+}
+
+/// Blend table for one foreground color against the most recently seen
+/// background pixel (antialiased edges mostly sit on a uniform background).
+struct EdgeLut {
+    color: u16,
+    bg: Option<u16>,
+    lut: [u16; 16],
+}
+
+impl EdgeLut {
+    fn new(color: u16) -> Self {
+        Self { color, bg: None, lut: [0; 16] }
+    }
+
+    /// Wire-order result of blending `self.color` over wire pixel `dst`.
+    fn blend(&mut self, dst: u16, a: u8) -> u16 {
+        if self.bg != Some(dst) {
+            let bg = to_wire(dst);
+            for (k, e) in self.lut.iter_mut().enumerate() {
+                *e = to_wire(blend565(bg, self.color, k as u8));
+            }
+            self.bg = Some(dst);
+        }
+        self.lut[a as usize]
+    }
 }
 
 impl<'a> Canvas<'a> {
     pub fn new(area: Rect, buf: &'a mut [u16]) -> Self {
         debug_assert!(buf.len() >= (area.width() * area.height()) as usize);
-        Self { area, buf }
+        Self { area, clip: Some(area), buf }
     }
 
     pub fn area(&self) -> Rect {
         self.area
+    }
+
+    /// Restrict drawing to `r` (within the canvas area) until `reset_clip`.
+    pub fn set_clip(&mut self, r: Rect) {
+        self.clip = r.intersect(&self.area);
+    }
+
+    pub fn reset_clip(&mut self) {
+        self.clip = Some(self.area);
+    }
+
+    fn visible(&self, r: Rect) -> Option<Rect> {
+        r.intersect(&self.clip?)
     }
 
     fn index(&self, x: i32, y: i32) -> usize {
@@ -93,7 +150,7 @@ impl<'a> Canvas<'a> {
     }
 
     pub fn fill(&mut self, r: Rect, color: u16) {
-        let Some(r) = r.intersect(&self.area) else { return };
+        let Some(r) = self.visible(r) else { return };
         let wire = to_wire(color);
         for y in r.y0..=r.y1 {
             let i = self.index(r.x0, y);
@@ -101,25 +158,91 @@ impl<'a> Canvas<'a> {
         }
     }
 
+    /// Fill `r` with a vertical gradient from `top` to `bottom`, optionally
+    /// with antialiased rounded corners of `radius` on the top and/or bottom
+    /// edge.
+    pub fn fill_round_rect(&mut self, r: Rect, radius: i32, top: u16, bottom: u16, round_top: bool, round_bottom: bool) {
+        let Some(vis) = self.visible(r) else { return };
+        let radius = radius.min(r.width() / 2).min(r.height() / 2).max(0);
+        let rf = radius as f32;
+        for y in vis.y0..=vis.y1 {
+            let k = if r.height() > 1 { ((y - r.y0) * 15 / (r.height() - 1)) as u8 } else { 0 };
+            let color = blend565(top, bottom, k);
+            let wire = to_wire(color);
+            let start = self.index(vis.x0, y);
+            let row = &mut self.buf[start..start + vis.width() as usize];
+            // Vertical distance into a rounded corner, if this row has one.
+            let cy = if round_top && y < r.y0 + radius {
+                Some(r.y0 as f32 + rf)
+            } else if round_bottom && y > r.y1 - radius {
+                Some((r.y1 + 1) as f32 - rf)
+            } else {
+                None
+            };
+            let Some(cy) = cy else {
+                row.fill(wire);
+                continue;
+            };
+            let mut lut = EdgeLut::new(color);
+            for (i, dst) in row.iter_mut().enumerate() {
+                let x = vis.x0 + i as i32;
+                let cx = if x < r.x0 + radius {
+                    r.x0 as f32 + rf
+                } else if x > r.x1 - radius {
+                    (r.x1 + 1) as f32 - rf
+                } else {
+                    *dst = wire;
+                    continue;
+                };
+                let d = ((x as f32 + 0.5 - cx).powi(2) + (y as f32 + 0.5 - cy).powi(2)).sqrt();
+                let a = ((rf - d + 0.5).clamp(0.0, 1.0) * 15.0).round() as u8;
+                match a {
+                    0 => {}
+                    15 => *dst = wire,
+                    _ => *dst = lut.blend(*dst, a),
+                }
+            }
+        }
+    }
+
     /// Draw one glyph with its pen position at (x, baseline).
     ///
     /// Hot path for scrolling text. Most glyph pixels are fully transparent
-    /// or fully opaque; only antialiased edges blend, and those reuse a
-    /// 16-entry table for the most recent background color.
+    /// or fully opaque; only antialiased edges blend, through `EdgeLut`.
     pub fn glyph(&mut self, font: &Font, g: &Glyph, x: i32, baseline: i32, color: u16) {
+        self.glyph_scaled(font, g, x, baseline, color, 0, 1.0);
+    }
+
+    /// Like `glyph`, but squashed vertically by `scale` (0-1] towards the
+    /// row `pivot_y` — e.g. a flip-clock flap folding over its hinge.
+    pub fn glyph_scaled(&mut self, font: &Font, g: &Glyph, x: i32, baseline: i32, color: u16, pivot_y: i32, scale: f32) {
         let gx = x + g.left as i32;
         let gy = baseline + g.top as i32;
-        let Some(r) = Rect::from_size(gx, gy, g.w as i32, g.h as i32).intersect(&self.area) else {
+        let scaled = scale < 0.999;
+        let (top, bottom) = if scaled {
+            let map = |y: i32| pivot_y as f32 + (y - pivot_y) as f32 * scale;
+            (map(gy).floor() as i32, map(gy + g.h as i32).ceil() as i32)
+        } else {
+            (gy, gy + g.h as i32)
+        };
+        let Some(r) = self.visible(Rect::new(gx, top, gx + g.w as i32 - 1, bottom - 1)) else {
             return;
         };
         let stride = (g.w as usize).div_ceil(2);
         let data = &font.data[g.offset as usize..];
         let fg = to_wire(color);
-        let mut lut_bg = None;
-        let mut lut = [0u16; 16];
+        let mut lut = EdgeLut::new(color);
         let (sx0, w) = ((r.x0 - gx) as usize, r.width() as usize);
         for y in r.y0..=r.y1 {
-            let src = &data[(y - gy) as usize * stride..][..stride];
+            let sy = if scaled {
+                (pivot_y as f32 + (y as f32 + 0.5 - pivot_y as f32) / scale).floor() as i32 - gy
+            } else {
+                y - gy
+            };
+            if sy < 0 || sy >= g.h as i32 {
+                continue;
+            }
+            let src = &data[sy as usize * stride..][..stride];
             let start = self.index(r.x0, y);
             for (i, dst) in self.buf[start..start + w].iter_mut().enumerate() {
                 let sx = sx0 + i;
@@ -128,17 +251,36 @@ impl<'a> Canvas<'a> {
                 match a {
                     0 => {}
                     15 => *dst = fg,
-                    _ => {
-                        if lut_bg != Some(*dst) {
-                            let bg = to_wire(*dst);
-                            for (k, e) in lut.iter_mut().enumerate() {
-                                *e = to_wire(blend565(bg, color, k as u8));
-                            }
-                            lut_bg = Some(*dst);
-                        }
-                        *dst = lut[a as usize];
-                    }
+                    _ => *dst = lut.blend(*dst, a),
                 }
+            }
+        }
+    }
+
+    /// Blit a `w x h` sprite at (x, y): `bg` is RGB565 little-endian; each
+    /// glow layer is a 4-bit intensity map (rows padded to a byte) scaled by
+    /// a 0-15 weight. The strongest layer's level picks a `palette` color
+    /// that is added (saturating) onto the background.
+    pub fn blit_glow(&mut self, x: i32, y: i32, w: usize, h: usize, bg: &[u8], layers: &[(&[u8], u8)], palette: &[u16; 16]) {
+        let Some(r) = self.visible(Rect::from_size(x, y, w as i32, h as i32)) else { return };
+        let stride = w.div_ceil(2);
+        for py in r.y0..=r.y1 {
+            let sy = (py - y) as usize;
+            let start = self.index(r.x0, py);
+            for (i, dst) in self.buf[start..start + r.width() as usize].iter_mut().enumerate() {
+                let sx = (r.x0 - x) as usize + i;
+                let k = 2 * (sy * w + sx);
+                let base = u16::from_le_bytes([bg[k], bg[k + 1]]);
+                let level = layers
+                    .iter()
+                    .map(|(g, weight)| {
+                        let b = g[sy * stride + sx / 2];
+                        let q = if sx % 2 == 0 { b >> 4 } else { b & 0x0F };
+                        (q as u16 * *weight as u16 / 15) as u8
+                    })
+                    .max()
+                    .unwrap_or(0);
+                *dst = to_wire(if level == 0 { base } else { add565(base, palette[level as usize]) });
             }
         }
     }
@@ -154,7 +296,7 @@ impl<'a> Canvas<'a> {
                 if pen + g.left as i32 > self.area.x1 {
                     break;
                 }
-                if pen + g.left as i32 + g.w as i32 >= self.area.x0 {
+                if pen + g.left as i32 + g.w as i32 > self.area.x0 {
                     self.glyph(font, g, pen, baseline, color);
                 }
                 pen += g.advance as i32;
@@ -275,6 +417,13 @@ mod tests {
         assert_eq!(Rect::new(3, 5, 10, 12).aligned(), Some(Rect::new(2, 4, 11, 13)));
         assert_eq!(Rect::new(-5, 470, 600, 900).aligned(), Some(Rect::new(0, 470, 479, 479)));
         assert_eq!(Rect::new(500, 0, 600, 10).aligned(), None);
+    }
+
+    #[test]
+    fn add_saturates_per_channel() {
+        assert_eq!(add565(0xF800, 0xF800), 0xF800);
+        assert_eq!(add565(0x0001, 0x0002), 0x0003);
+        assert_eq!(add565(0x07E0, 0x0020), 0x07E0);
     }
 
     #[test]

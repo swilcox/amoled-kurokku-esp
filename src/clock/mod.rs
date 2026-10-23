@@ -1,7 +1,10 @@
 //! Clock faces. Each face is a `Scene` that also tracks what it last showed,
 //! so it can report only the regions that changed.
 
+pub mod flip;
+pub mod led;
 pub mod modern;
+pub mod nixie;
 
 use crate::gfx::{Rect, Scene};
 
@@ -35,14 +38,36 @@ pub fn display_hour(hour: u8, format_24h: bool) -> (u8, bool) {
     }
 }
 
-pub trait Face: Scene {
+pub trait Face: Scene + Send {
     /// Record `t` as the time to show and return the regions that changed
     /// since the last call (the whole screen on the first call, or after
-    /// `invalidate`).
-    fn update(&mut self, t: &LocalTime) -> Vec<Rect>;
+    /// `invalidate`). `now_ms` is a monotonic clock for animations.
+    fn update(&mut self, now_ms: u32, t: &LocalTime) -> Vec<Rect>;
 
     /// Force a full redraw on the next `update`.
     fn invalidate(&mut self);
+
+    /// Burn-in protection: shift everything by (dx, dy) px. Implementations
+    /// force a full redraw when the offset changes.
+    fn set_offset(&mut self, dx: i32, dy: i32);
+
+    /// True while an animation is running (the engine then ticks fast).
+    fn animating(&self) -> bool {
+        false
+    }
+}
+
+/// Face names accepted by `face_for`.
+pub const STYLES: [&str; 4] = ["modern", "led", "flip", "nixie"];
+
+/// Build the face for a style name; unknown names give the modern face.
+pub fn face_for(style: Option<&str>, format_24h: bool) -> Box<dyn Face> {
+    match style.unwrap_or("modern") {
+        "led" => Box::new(led::LedFace::new(format_24h)),
+        "flip" => Box::new(flip::FlipFace::new(format_24h)),
+        "nixie" => Box::new(nixie::NixieFace::new(format_24h)),
+        _ => Box::new(modern::ModernFace::new(format_24h)),
+    }
 }
 
 /// Current local time per the `TZ` environment variable.
@@ -66,8 +91,41 @@ pub fn now_local() -> LocalTime {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+    use crate::gfx::{MemPanel, Renderer, SCREEN};
+
+    fn render_all(face: &mut dyn Face, steps: &[(u32, LocalTime)]) -> Vec<u16> {
+        let mut panel = MemPanel::default();
+        let mut r = Renderer::new(480 * 32);
+        for (ms, t) in steps {
+            let rects = face.update(*ms, t);
+            r.render(&mut panel, face, &rects).unwrap();
+        }
+        panel.pixels
+    }
+
+    /// Rendering `from` in full and then only the dirty regions for `to`
+    /// (at a later time, after any animation has finished) must give exactly
+    /// the same pixels as rendering `to` in full. Also checks the same with a
+    /// burn-in offset applied in between.
+    pub fn check_incremental(make: impl Fn() -> Box<dyn Face>, from: LocalTime, to: LocalTime) {
+        let settle = 60_000;
+        let full = {
+            let mut f = make();
+            render_all(&mut *f, &[(settle, to)])
+        };
+        let mut f = make();
+        let steps: Vec<(u32, LocalTime)> =
+            [(0, from), (1000, to)].into_iter().chain((1..=60).map(|i| (1000 + i * 50, to))).collect();
+        assert!(render_all(&mut *f, &steps) == full, "{from:?} -> {to:?}");
+
+        // A burn-in shift forces a full repaint that matches a fresh render.
+        let mut f = make();
+        f.update(0, &from);
+        f.set_offset(3, -3);
+        assert_eq!(f.update(settle, &to), vec![SCREEN]);
+    }
 
     #[test]
     fn twelve_hour_conversion() {

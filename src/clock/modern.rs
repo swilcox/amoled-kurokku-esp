@@ -88,11 +88,13 @@ pub struct ModernFace {
     layout: Layout,
     t: LocalTime,
     shown: Option<LocalTime>,
+    /// Burn-in offset.
+    off: (i32, i32),
 }
 
 impl ModernFace {
     pub fn new(format_24h: bool) -> Self {
-        Self { format_24h, layout: Layout::new(), t: LocalTime::default(), shown: None }
+        Self { format_24h, layout: Layout::new(), t: LocalTime::default(), shown: None, off: (0, 0) }
     }
 
     pub fn format_24h(&self) -> bool {
@@ -141,7 +143,26 @@ impl ModernFace {
 }
 
 impl Face for ModernFace {
-    fn update(&mut self, t: &LocalTime) -> Vec<Rect> {
+    fn update(&mut self, _now_ms: u32, t: &LocalTime) -> Vec<Rect> {
+        let (dx, dy) = self.off;
+        self.diff(t).into_iter().map(|r| if r == SCREEN { r } else { r.translate(dx, dy) }).collect()
+    }
+
+    fn invalidate(&mut self) {
+        self.shown = None;
+    }
+
+    fn set_offset(&mut self, dx: i32, dy: i32) {
+        if self.off != (dx, dy) {
+            self.off = (dx, dy);
+            self.invalidate();
+        }
+    }
+}
+
+impl ModernFace {
+    /// Changed regions, before the burn-in offset.
+    fn diff(&mut self, t: &LocalTime) -> Vec<Rect> {
         self.t = *t;
         let Some(prev) = self.shown.replace(*t) else {
             return vec![SCREEN];
@@ -166,36 +187,34 @@ impl Face for ModernFace {
         }
         dirty
     }
-
-    fn invalidate(&mut self) {
-        self.shown = None;
-    }
 }
 
 impl Scene for ModernFace {
     fn draw(&self, c: &mut Canvas) {
         let l = &self.layout;
-        let cx = LCD_W as i32 / 2;
+        let (dx, dy) = self.off;
+        let cx = LCD_W as i32 / 2 + dx;
         c.fill(c.area(), BG);
 
-        if c.area().intersect(&l.date_rect).is_some() {
-            c.text_centered(&CLOCK_DATE, cx, l.date_baseline, &Self::date_text(&self.t), DATE);
+        if c.area().intersect(&l.date_rect.translate(dx, dy)).is_some() {
+            c.text_centered(&CLOCK_DATE, cx, l.date_baseline + dy, &Self::date_text(&self.t), DATE);
         }
 
-        let shift = self.shift(&self.t);
+        let shift = self.shift(&self.t) + dx;
+        let base = l.digit_baseline + dy;
         for (i, ch) in self.digits(&self.t).into_iter().enumerate() {
             if let Some(g) = ch.and_then(|ch| CLOCK_BIG.glyph(ch)) {
                 let pen = l.cell_x[i] + shift + (l.cell_w - g.advance as i32) / 2;
-                c.glyph(&CLOCK_BIG, g, pen, l.digit_baseline, DIGIT);
+                c.glyph(&CLOCK_BIG, g, pen, base, DIGIT);
             }
         }
         if let Some(g) = CLOCK_BIG.glyph(':') {
             let pen = l.colon_x + shift + (l.colon_w - g.advance as i32) / 2;
-            c.glyph(&CLOCK_BIG, g, pen, l.digit_baseline, DIGIT);
+            c.glyph(&CLOCK_BIG, g, pen, base, DIGIT);
         }
 
-        if c.area().intersect(&l.secs_rect).is_some() {
-            c.text_centered(&CLOCK_SECS, cx, l.secs_baseline, &self.secs_text(&self.t), ACCENT);
+        if c.area().intersect(&l.secs_rect.translate(dx, dy)).is_some() {
+            c.text_centered(&CLOCK_SECS, cx, l.secs_baseline + dy, &self.secs_text(&self.t), ACCENT);
         }
     }
 }
@@ -203,31 +222,13 @@ impl Scene for ModernFace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gfx::{MemPanel, Renderer};
 
     fn at(hour: u8, minute: u8, second: u8) -> LocalTime {
         LocalTime { year: 2026, month: 10, day: 22, weekday: 4, hour, minute, second }
     }
 
-    fn full(face_24h: bool, t: &LocalTime) -> Vec<u16> {
-        let mut face = ModernFace::new(face_24h);
-        let mut panel = MemPanel::default();
-        let rects = face.update(t);
-        Renderer::new(480 * 32).render(&mut panel, &face, &rects).unwrap();
-        panel.pixels
-    }
-
-    /// Rendering `from` in full and then only the dirty regions for `to`
-    /// must give exactly the same pixels as rendering `to` in full.
     fn check_incremental(face_24h: bool, from: LocalTime, to: LocalTime) {
-        let mut face = ModernFace::new(face_24h);
-        let mut panel = MemPanel::default();
-        let mut r = Renderer::new(480 * 32);
-        let rects = face.update(&from);
-        r.render(&mut panel, &face, &rects).unwrap();
-        let rects = face.update(&to);
-        r.render(&mut panel, &face, &rects).unwrap();
-        assert!(panel.pixels == full(face_24h, &to), "{from:?} -> {to:?}");
+        crate::clock::tests::check_incremental(|| Box::new(ModernFace::new(face_24h)), from, to);
     }
 
     #[test]
@@ -255,8 +256,8 @@ mod tests {
     #[test]
     fn only_seconds_change_within_a_minute() {
         let mut face = ModernFace::new(true);
-        face.update(&at(12, 34, 56));
-        assert_eq!(face.update(&at(12, 34, 57)), vec![face.layout.secs_rect]);
-        assert!(face.update(&at(12, 34, 57)).is_empty());
+        face.update(0, &at(12, 34, 56));
+        assert_eq!(face.update(0, &at(12, 34, 57)), vec![face.layout.secs_rect]);
+        assert!(face.update(0, &at(12, 34, 57)).is_empty());
     }
 }

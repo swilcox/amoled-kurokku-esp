@@ -16,3 +16,4 @@ tz: CST6CDT,M3.2.0,M11.1.0
 # poll_ms: 5000             # default 5000
 # syslog_host: 192.168.1.50:5514   # omit to disable UDP syslog
 # ntp_server: pool.ntp.org  # omit to use ESP-IDF's pool.ntp.org defaults
+# clock_style: modern       # modern | led | flip | nixie (KEY cycles it on the device)

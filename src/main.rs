@@ -5,8 +5,9 @@
 //! step degrades gracefully: with no config or no network the clock still
 //! runs from the RTC.
 //!
-//! Buttons: BOOT cycles brightness; KEY toggles 12/24h on the clock or
-//! dismisses anything else to the clock; PWR turns the panel off/on.
+//! Buttons: BOOT cycles brightness; KEY cycles the clock face (modern, LED,
+//! flip, nixie) or dismisses anything else to the clock; PWR turns the panel
+//! off/on.
 
 #[cfg(target_os = "espidf")]
 fn main() -> anyhow::Result<()> {

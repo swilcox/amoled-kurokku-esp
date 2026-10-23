@@ -2,6 +2,10 @@ use std::process::Command;
 
 #[path = "build_support/fontgen.rs"]
 mod fontgen;
+#[path = "build_support/nixie.rs"]
+mod nixie;
+#[path = "build_support/segments.rs"]
+mod segments;
 
 /// Font for server-sent text (messages, status lines).
 const TEXT_FONT: &str = "assets/fonts/FiraSans-SemiBold.ttf";
@@ -56,39 +60,68 @@ fn main() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let out_dir = std::env::var("OUT_DIR").unwrap();
     println!("cargo:rerun-if-changed=build_support");
-    fontgen::generate(
-        std::path::Path::new(&manifest_dir),
-        std::path::Path::new(&out_dir),
-        &[
-            fontgen::FontSpec {
-                name: "CLOCK_BIG",
-                file: "assets/fonts/BebasNeue-Regular.ttf",
-                px: 250.0,
-                chars: "0123456789:",
-            },
-            fontgen::FontSpec {
-                name: "CLOCK_DATE",
-                file: "assets/fonts/BebasNeue-Regular.ttf",
-                px: 48.0,
-                chars: " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
-            },
-            fontgen::FontSpec {
-                name: "CLOCK_SECS",
-                file: "assets/fonts/BebasNeue-Regular.ttf",
-                px: 64.0,
-                chars: " 0123456789APM",
-            },
-            fontgen::FontSpec {
-                name: "BANNER",
-                file: "assets/fonts/BebasNeue-Regular.ttf",
-                px: 140.0,
-                chars: " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
-            },
-            fontgen::FontSpec { name: "TEXT_S", file: TEXT_FONT, px: 44.0, chars: TEXT_CHARS },
-            fontgen::FontSpec { name: "TEXT_M", file: TEXT_FONT, px: 64.0, chars: TEXT_CHARS },
-            fontgen::FontSpec { name: "TEXT_L", file: TEXT_FONT, px: 140.0, chars: TEXT_CHARS },
-        ],
-    );
+    let root = std::path::Path::new(&manifest_dir);
+    let ttf_specs = [
+        fontgen::FontSpec {
+            name: "CLOCK_BIG",
+            file: "assets/fonts/BebasNeue-Regular.ttf",
+            px: 250.0,
+            chars: "0123456789:",
+        },
+        fontgen::FontSpec {
+            name: "CLOCK_DATE",
+            file: "assets/fonts/BebasNeue-Regular.ttf",
+            px: 48.0,
+            chars: " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+        },
+        fontgen::FontSpec {
+            name: "CLOCK_SECS",
+            file: "assets/fonts/BebasNeue-Regular.ttf",
+            px: 64.0,
+            chars: " 0123456789APM",
+        },
+        fontgen::FontSpec {
+            name: "FLIP",
+            file: "assets/fonts/BebasNeue-Regular.ttf",
+            px: 220.0,
+            chars: "0123456789",
+        },
+        fontgen::FontSpec {
+            name: "BANNER",
+            file: "assets/fonts/BebasNeue-Regular.ttf",
+            px: 140.0,
+            chars: " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+        },
+        fontgen::FontSpec { name: "TEXT_S", file: TEXT_FONT, px: 44.0, chars: TEXT_CHARS },
+        fontgen::FontSpec { name: "TEXT_M", file: TEXT_FONT, px: 64.0, chars: TEXT_CHARS },
+        fontgen::FontSpec { name: "TEXT_L", file: TEXT_FONT, px: 140.0, chars: TEXT_CHARS },
+    ];
+    let mut sets: Vec<fontgen::GlyphSet> = ttf_specs.iter().map(|s| fontgen::from_ttf(root, s)).collect();
+    // 7-segment LED digits: big for HH:MM, small for seconds.
+    sets.push(segments::led_set(&segments::SegSpec {
+        name: "LED_BIG",
+        w: 82.0,
+        h: 168.0,
+        t: 16.0,
+        gap: 2.5,
+        slant: 0.08,
+        glow_r: 6,
+        glow_peak: 0.45,
+        colon_w: 36.0,
+    }));
+    sets.push(segments::led_set(&segments::SegSpec {
+        name: "LED_SMALL",
+        w: 34.0,
+        h: 62.0,
+        t: 7.0,
+        gap: 1.2,
+        slant: 0.08,
+        glow_r: 3,
+        glow_peak: 0.45,
+        colon_w: 16.0,
+    }));
+    fontgen::emit(std::path::Path::new(&out_dir), sets);
+    nixie::generate(root, std::path::Path::new(&out_dir), "assets/fonts/FiraSans-ExtraLight.ttf", 205.0);
 
     // Keep partitions.csv in sync with esp-idf-sys's cmake build dirs.
     // The cmake build resolves CONFIG_PARTITION_TABLE_CUSTOM_FILENAME relative

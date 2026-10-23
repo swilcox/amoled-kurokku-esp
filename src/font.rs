@@ -52,6 +52,18 @@ impl Font {
         }
     }
 
+    /// Screen rectangle covered by `ch`'s bitmap with the pen at
+    /// (x, baseline).
+    pub fn glyph_rect(&self, ch: char, x: i32, baseline: i32) -> Option<crate::gfx::Rect> {
+        let g = self.glyph(ch).filter(|g| g.w > 0 && g.h > 0)?;
+        Some(crate::gfx::Rect::from_size(
+            x + g.left as i32,
+            baseline + g.top as i32,
+            g.w as i32,
+            g.h as i32,
+        ))
+    }
+
     /// Ink extent (top, bottom-exclusive) over `chars`, relative to the
     /// baseline, y-down.
     pub fn ink_rows(&self, chars: &str) -> (i32, i32) {

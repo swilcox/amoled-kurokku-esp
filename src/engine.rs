@@ -18,7 +18,7 @@ use esp_idf_svc::wifi::{BlockingWifi, EspWifi};
 
 use crate::board::LCD_W;
 use crate::buttons::{Button, Buttons};
-use crate::clock;
+use crate::clock::{self, STYLES};
 use crate::co5300::Co5300;
 use crate::color::WHITE;
 use crate::config::{self, AppConfig};
@@ -60,6 +60,11 @@ pub struct Engine {
     widget: Box<dyn Widget>,
     is_clock: bool,
     format_24h: bool,
+    /// Face chosen on the device (KEY), persisted in NVS.
+    local_style: String,
+    /// Face named by the server's current clock instruction, if any; it
+    /// overrides `local_style`.
+    server_style: Option<String>,
     /// Current brightness on the server's 0-15 scale.
     brightness: u8,
     panel_on: bool,
@@ -78,6 +83,7 @@ struct Profile {
 impl Engine {
     pub fn new(cfg: AppConfig, nvs: EspDefaultNvsPartition, hw: Hardware) -> anyhow::Result<Self> {
         let format_24h = cfg.format_24h;
+        let local_style = cfg.clock_style.clone();
         let brightness = cfg.default_brightness.min(15);
         hw.lcd.set_brightness(panel_brightness(brightness))?;
         Ok(Self {
@@ -86,9 +92,11 @@ impl Engine {
             hw,
             buttons: Buttons::new(),
             renderer: Renderer::new(BAND_PIXELS),
-            widget: Box::new(Clock::new(format_24h, None)),
+            widget: Box::new(Clock::new(format_24h, Some(&local_style))),
             is_clock: true,
             format_24h,
+            local_style,
+            server_style: None,
             brightness,
             panel_on: true,
             boot: Instant::now(),
@@ -113,8 +121,25 @@ impl Engine {
     }
 
     fn show_clock(&mut self) {
-        self.widget = Box::new(Clock::new(self.format_24h, None));
+        let style = self.server_style.as_deref().unwrap_or(&self.local_style);
+        self.widget = Box::new(Clock::new(self.format_24h, Some(style)));
         self.is_clock = true;
+    }
+
+    /// KEY on the clock: switch to the next face and remember it.
+    fn next_style(&mut self) {
+        let current = self.server_style.take().unwrap_or_else(|| self.local_style.clone());
+        let i = STYLES.iter().position(|s| *s == current).unwrap_or(0);
+        self.local_style = STYLES[(i + 1) % STYLES.len()].to_string();
+        log::info!("clock style: {}", self.local_style);
+        match config::open_nvs(self.nvs.clone()) {
+            Ok(mut nvs) => {
+                if let Err(e) = config::persist_str_opt(&mut nvs, "clock_style", Some(&self.local_style)) {
+                    log::warn!("persist clock_style failed: {e}");
+                }
+            }
+            Err(e) => log::warn!("persist clock_style failed: {e}"),
+        }
     }
 
     /// Tick the active widget once and paint what changed.
@@ -221,10 +246,10 @@ impl Engine {
                 let i = LOCAL_BRIGHTNESS.iter().position(|&l| l <= self.brightness).unwrap_or(0);
                 self.set_brightness(LOCAL_BRIGHTNESS[(i + 1) % LOCAL_BRIGHTNESS.len()]);
             }
-            // On the clock: toggle 12/24h. On anything else: dismiss to the clock.
+            // On the clock: next face. On anything else: dismiss to the clock.
             Button::Key => {
                 if self.is_clock {
-                    self.format_24h = !self.format_24h;
+                    self.next_style();
                 }
                 self.show_clock();
             }
@@ -241,8 +266,8 @@ impl Engine {
         match inst {
             Instruction::Clock { format_24h, style } => {
                 self.format_24h = format_24h;
-                self.widget = Box::new(Clock::new(format_24h, style.as_deref()));
-                self.is_clock = true;
+                self.server_style = style.filter(|s| !s.is_empty());
+                self.show_clock();
             }
             Instruction::Message { text, scroll_speed_ms, repeats, direction, color, size } => {
                 let dir = Direction::parse(direction.as_deref());

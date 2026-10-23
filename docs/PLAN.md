@@ -72,13 +72,14 @@ Throughput: 40 MHz × 4 lines works out to about 23 ms per full frame in theory,
 - **Smooth scrolling** (2026-10-22): the panel's TE line isn't wired (GPIO14 probed), so there's no vsync. Instead each frame is written well inside one ~16.7 ms refresh: wire-order canvas, a glyph fast path (only antialiased edges blend), and double-buffered bands so drawing overlaps DMA. Marquee went from 22 fps / 36 ms per frame to ~75 fps / 12 ms (3 ms DMA wait).
 
 ### Phase 3: Clock styles
-`style` field on the clock instruction:
+`style` field on the clock instruction (needs kurokku-esp-server PR #10 deployed); on the device, KEY cycles faces and the choice persists in NVS (`clock_style`), with a server `style` taking precedence.
 - `modern`: Phase 1.
-- `led`: procedurally drawn 7-segment with lit/unlit segments and glow. Cheap and needs no assets.
-- `flip`: split-flap cards with a top half/bottom half fold animation. Only the changing digit animates.
-- `nixie`: pre-rendered tube sprites (0–9 plus glow) in the assets partition, with flicker on change.
-- **Burn-in protection**: a few pixels of orbit shift every minute, black backgrounds, optional night mode (dim red).
-- Optional "complications" on any face: temperature, date.
+- `led`: 7-segment digits rasterized at build time (`build_support/segments.rs`) as glyphs: lit segments with blurred halos, unlit "ghost" segments, blinking colon, 7-segment seconds.
+- `flip`: split-flap cards; on change the old top half folds down and the new bottom half swings in (600 ms, ~48 fps). Uses new Canvas primitives: clipping, AA rounded gradient rects, vertically squashed glyphs.
+- `nixie`: tube art generated at build time (`build_support/nixie.rs`): one RGB565 tube background (glass, mesh, stacked unlit cathodes) plus a 4-bit glow map per digit, colored through an orange→white-hot palette and added at runtime; neon colon dots; 200 ms crossfade on change.
+- **Burn-in protection**: every face shifts around an 8-point, ±3 px orbit every 2 minutes, stepping at :30 so the repaint never lands on a minute rollover. Full repaints keep flip/fade animations going.
+- ✅ **Done 2026-10-22.** App image is now 2.68 MB of the 3 MB slot, so Phase 4 starts by moving fonts/art into the assets partition.
+- Later ideas: color options per face, nixie cathode-cycling, date/temperature complications.
 
 ### Phase 4: Pictures
 - `image` instruction: `{type:"image", url, fit}` → stream QOI over HTTP to the screen.

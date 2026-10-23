@@ -2,11 +2,14 @@
 //!
 //!     just preview                               # clock 12:34:56, 24h
 //!     just preview 09:05:07 12h out.png          # clock
+//!     just preview 09:05:07 led                  # clock style: modern|led|flip|nixie
 //!     just preview message "72°F" [up] [small|medium|large] [@ms] [#rrggbb]
 //!     just preview status "KUROKKU" "192.168.1.50"
 //!
 //! Output defaults to target/preview/<kind>.png. `@ms` renders a scrolling
-//! message as it looks that many milliseconds in.
+//! message as it looks that many milliseconds in. For clocks, `change` shows
+//! the previous minute until 1 s in, so `change @1300` catches a flip
+//! animation 300 ms after the minute ticks over.
 
 use std::fs::File;
 use std::io::BufWriter;
@@ -47,16 +50,19 @@ fn main() -> anyhow::Result<()> {
                 let [h, m, s] = v[..] else { anyhow::bail!("time must be HH:MM:SS") };
                 (t.hour, t.minute, t.second) = (h, m, s);
             }
-            ("clock", Box::new(Clock::new(!flag("12h"), None)))
+            let style = amoled_kurokku_esp::clock::STYLES.into_iter().find(|s| flag(s));
+            ("clock", Box::new(Clock::new(!flag("12h"), style)))
         }
     };
 
     // Tick from 0 to the requested time, rendering every step like the device.
     let mut panel = MemPanel::default();
     let mut r = Renderer::new(LCD_W as usize * 32);
+    let prev = LocalTime { minute: (t.minute + 59) % 60, ..t };
     let mut ms = 0;
     loop {
-        if let Step::Redraw(rects) = widget.tick(ms, &t) {
+        let now = if flag("change") && ms < 1000 { prev } else { t };
+        if let Step::Redraw(rects) = widget.tick(ms, &now) {
             r.render(&mut panel, &*widget, &rects)?;
         }
         if ms >= at_ms {

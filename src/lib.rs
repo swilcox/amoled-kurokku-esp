@@ -13,6 +13,7 @@ pub mod fonts;
 pub mod gfx;
 pub mod protocol;
 pub mod rtc;
+pub mod sprites;
 pub mod touch;
 pub mod widget;
 

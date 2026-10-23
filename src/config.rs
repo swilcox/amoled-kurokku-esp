@@ -30,6 +30,9 @@ pub struct AppConfig {
     pub log_level: String,
     /// NTP server override (host or IP). None = ESP-IDF's pool.ntp.org defaults.
     pub ntp_server: Option<String>,
+    /// Default clock face (see `clock::STYLES`), chosen with the KEY button.
+    /// A `style` sent by the server takes precedence.
+    pub clock_style: String,
 }
 
 /// Parse a log level string into a `LevelFilter`. Unrecognized values (including
@@ -60,6 +63,7 @@ impl AppConfig {
         let syslog_host = nvs_get_str(nvs, "syslog_host");
         let log_level = nvs_get_str(nvs, "log_level").unwrap_or_else(|| "info".to_string());
         let ntp_server = nvs_get_str(nvs, "ntp_server");
+        let clock_style = nvs_get_str(nvs, "clock_style").unwrap_or_else(|| "modern".to_string());
 
         let cfg = Self {
             wifi_ssid,
@@ -73,10 +77,11 @@ impl AppConfig {
             syslog_host,
             log_level,
             ntp_server,
+            clock_style,
         };
 
         log::info!(
-            "Config loaded: server={}, device={}, 24h={}, brightness={}, poll={}ms, tz={}, syslog={:?}, log_level={}, ntp={:?}",
+            "Config loaded: server={}, device={}, 24h={}, brightness={}, poll={}ms, tz={}, syslog={:?}, log_level={}, ntp={:?}, clock_style={}",
             cfg.server_url,
             cfg.device_id,
             cfg.format_24h,
@@ -86,6 +91,7 @@ impl AppConfig {
             cfg.syslog_host,
             cfg.log_level,
             cfg.ntp_server,
+            cfg.clock_style,
         );
 
         cfg
@@ -108,6 +114,7 @@ impl AppConfig {
                 let _ = nvs.remove("syslog_host");
             }
         }
+        nvs_set_str(nvs, "clock_style", &self.clock_style)?;
         match &self.ntp_server {
             Some(s) => nvs_set_str(nvs, "ntp_server", s)?,
             None => {

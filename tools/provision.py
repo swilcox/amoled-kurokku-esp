@@ -55,6 +55,7 @@ SCHEMA = {
     "tz":          ("tz",          "string"),
     "syslog_host": ("syslog_host", "string"),
     "ntp_server":  ("ntp_server",  "string"),
+    "clock_style": ("clock_style", "string"),
     "format_24h":  ("format_24h",  "u8"),
     "brightness":  ("brightness",  "u8"),
     # Firmware reads this via get_i32 + cast (esp-idf-svc's NVS wrapper
