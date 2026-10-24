@@ -114,6 +114,10 @@ Mapping as built (the table in `src/engine.rs` is the reference):
 ### Phase 6: Server and scheduling
 - Extend **kurokku-esp-server** rather than writing a new one. It already has playlists, cron entries, alerts, day/night brightness from lat/long (`internal/solar`), OTA and the admin UI.
 - Add: amoled widget fields (style, colors, direction, image url), image library, device event endpoint, quiet hours (screen off), and an admin UI preview of what the device shows.
+- Done 2026-10-23: widget fields and the image library (server PRs #10, #11), device events (#12), then quiet hours and the admin preview:
+  - A device's `quiet_cron` (server time, evaluated per minute like entry crons) puts `display_off: true` in every poll response while it matches; an invalid cron never matches.
+  - The firmware turns the panel off; any button wakes it until a minute after the last input (`quiet.rs`). When quiet hours end the panel comes back on.
+  - The admin status panel previews amoled480 content: clock face style, message color and direction, library image thumbnail, slideshow folder, and "screen off" during quiet hours.
 
 ## 5. Decisions
 - No battery is fitted: no battery or charging features.

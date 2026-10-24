@@ -100,6 +100,9 @@ pub struct ServerResponse {
     pub brightness: Option<u8>,
     pub poll_interval_ms: Option<u64>,
     pub config: Option<ConfigUpdate>,
+    /// Quiet hours: the screen should be off.
+    #[serde(default)]
+    pub display_off: bool,
 }
 
 /// Map server brightness (0-15) to the panel's 0-255 register along a
@@ -170,6 +173,8 @@ mod tests {
         let r = parse(r#"{"instruction":{"type":"raw_pixel","data":[1,2,3]}}"#);
         assert_eq!(r.instruction, Some(Instruction::Unsupported));
         let r = parse(r#"{"brightness":3}"#);
+        assert!(!r.display_off);
+        assert!(parse(r#"{"display_off":true}"#).display_off);
         assert_eq!(r.instruction, None);
         let r = parse(r#"{"config":{"tz":"EST5EDT,M3.2.0,M11.1.0"}}"#);
         assert_eq!(r.config.unwrap().tz.as_deref(), Some("EST5EDT,M3.2.0,M11.1.0"));

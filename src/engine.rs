@@ -13,6 +13,9 @@
 //! few seconds; meanwhile server changes wait, and afterwards the widget is
 //! repainted.
 //!
+//! During the server's quiet hours (`display_off`) the screen is off; any
+//! button wakes it until a minute after the last input (`quiet`).
+//!
 //! Controls:
 //!
 //! | Input | Action |
@@ -43,6 +46,7 @@ use crate::config::{self, AppConfig};
 use crate::gfx::{Renderer, Rotation};
 use crate::input::{self, AppliedRotation, Input, SharedI2c};
 use crate::poller::{HttpPoller, FIRMWARE_VERSION};
+use crate::quiet::Quiet;
 use crate::protocol::{panel_brightness, parse_color, scroll_px_per_ms, ConfigUpdate, Instruction};
 use crate::widget::message::{font_for, Direction, Message};
 use crate::touch::{Gesture, Swipe};
@@ -67,6 +71,8 @@ struct Shared {
     instruction: Option<Instruction>,
     brightness: Option<u8>,
     config: Option<ConfigUpdate>,
+    /// Quiet hours started (true) or ended.
+    quiet: Option<bool>,
     polling: bool,
     last_ok: Option<Instant>,
     failures: u32,
@@ -99,6 +105,7 @@ pub struct Engine {
     /// Current brightness on the server's 0-15 scale.
     brightness: u8,
     panel_on: bool,
+    quiet: Quiet,
     boot: Instant,
     prof: Profile,
     slideshow: Option<Slideshow>,
@@ -154,6 +161,7 @@ impl Engine {
             server_style: None,
             brightness,
             panel_on: true,
+            quiet: Quiet::default(),
             boot: Instant::now(),
             prof: Profile::default(),
             slideshow: None,
@@ -288,14 +296,19 @@ impl Engine {
         }
 
         loop {
-            let (instruction, brightness, config) = {
+            let (instruction, brightness, config, quiet) = {
                 let mut s = shared.lock().unwrap();
                 // New content waits for an overlay to close.
                 let instruction = if self.overlay.is_none() { s.instruction.take() } else { None };
-                (instruction, s.brightness.take(), s.config.take())
+                (instruction, s.brightness.take(), s.config.take(), s.quiet.take())
             };
             if let Some(level) = brightness {
                 self.set_brightness(level);
+            }
+            if let Some(q) = quiet {
+                log::info!("quiet hours {}", if q { "started" } else { "ended" });
+                let on = self.quiet.set(q);
+                self.set_panel_on(on);
             }
             if let Some(update) = config {
                 self.apply_config(&update);
@@ -318,9 +331,13 @@ impl Engine {
             let now = self.now_ms();
             let pressed: Vec<Press> = self.buttons.poll(now).collect();
             for p in pressed {
+                self.quiet.input(now);
                 self.on_press(p);
             }
             self.take_inputs(&inputs);
+            if self.panel_on && self.quiet.expired(self.now_ms()) {
+                self.set_panel_on(false);
+            }
 
             if self.overlay.is_none() {
                 self.step_slideshow();
@@ -334,7 +351,10 @@ impl Engine {
     fn take_inputs(&mut self, inputs: &Receiver<Input>) {
         while let Ok(i) = inputs.try_recv() {
             match i {
-                Input::Gesture(g) if self.panel_on => self.on_gesture(g),
+                Input::Gesture(g) if self.panel_on => {
+                    self.quiet.input(self.now_ms());
+                    self.on_gesture(g);
+                }
                 Input::Gesture(_) => {}
                 Input::Orientation(r) => {
                     self.standing = Some(r);
@@ -634,6 +654,7 @@ fn network_loop(mut poller: HttpPoller, shared: &Mutex<Shared>, wifi: Option<Sha
     let mut last_instruction: Option<Instruction> = None;
     let mut last_brightness: Option<u8> = None;
     let mut last_config: Option<ConfigUpdate> = None;
+    let mut last_quiet = false;
     let mut failures: u32 = 0;
     let mut last_telemetry = Instant::now();
 
@@ -652,6 +673,10 @@ fn network_loop(mut poller: HttpPoller, shared: &Mutex<Shared>, wifi: Option<Sha
                 if let Some(b) = resp.brightness.filter(|b| last_brightness != Some(*b)) {
                     s.brightness = Some(b);
                     last_brightness = Some(b);
+                }
+                if resp.display_off != last_quiet {
+                    s.quiet = Some(resp.display_off);
+                    last_quiet = resp.display_off;
                 }
                 if let Some(c) = resp.config.filter(|c| last_config.as_ref() != Some(c)) {
                     log::info!("config update received: {c:?}");
