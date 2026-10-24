@@ -2,7 +2,7 @@
 //!
 //!     just preview                               # clock 12:34:56, 24h
 //!     just preview 09:05:07 12h out.png          # clock
-//!     just preview 09:05:07 led                  # clock style: modern|led|flip|nixie|railway|railway-black|classic
+//!     just preview 09:05:07 led                  # clock style: modern|led|flip|nixie|railway|railway-black|classic|random
 //!     just preview message "72°F" [up] [small|medium|large] [@ms] [#rrggbb]
 //!     just preview status "KUROKKU" "192.168.1.50"
 //!     just preview info                          # the info screen, sample values

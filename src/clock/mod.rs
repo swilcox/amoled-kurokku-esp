@@ -6,6 +6,7 @@ pub mod flip;
 pub mod led;
 pub mod modern;
 pub mod nixie;
+pub mod random;
 
 use crate::gfx::{Rect, Scene};
 
@@ -67,8 +68,11 @@ pub trait Face: Scene + Send {
     }
 }
 
-/// Face names accepted by `face_for`.
-pub const STYLES: [&str; 7] = ["modern", "led", "flip", "nixie", "railway", "railway-black", "classic"];
+/// The faces themselves; `random` picks among these.
+pub const FACES: [&str; 7] = ["modern", "led", "flip", "nixie", "railway", "railway-black", "classic"];
+
+/// Style names accepted by `face_for`, in KEY-cycling order.
+pub const STYLES: [&str; 8] = ["modern", "led", "flip", "nixie", "railway", "railway-black", "classic", "random"];
 
 /// Build the face for a style name; unknown names give the modern face.
 pub fn face_for(style: Option<&str>, format_24h: bool) -> Box<dyn Face> {
@@ -80,6 +84,7 @@ pub fn face_for(style: Option<&str>, format_24h: bool) -> Box<dyn Face> {
         "railway" => Box::new(analog::AnalogFace::new(&analog::RAILWAY)),
         "railway-black" => Box::new(analog::AnalogFace::new(&analog::RAILWAY_DARK)),
         "classic" => Box::new(analog::AnalogFace::new(&analog::CLASSIC_STYLE)),
+        "random" => Box::new(random::RandomFace::new(format_24h, random::seed())),
         _ => Box::new(modern::ModernFace::new(format_24h)),
     }
 }
