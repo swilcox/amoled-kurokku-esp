@@ -342,9 +342,12 @@ impl Engine {
             if self.overlay.is_none() {
                 self.step_slideshow();
             }
+            let started = self.now_ms();
             self.step();
-            let frame_ms = self.overlay.as_ref().unwrap_or(&self.widget).frame_ms();
-            FreeRtos::delay_ms(frame_ms.clamp(1, 20));
+            // frame_ms is the period between ticks, so time spent drawing
+            // comes out of the wait (but always yield a little).
+            let frame_ms = self.overlay.as_ref().unwrap_or(&self.widget).frame_ms().clamp(1, 20);
+            FreeRtos::delay_ms(frame_ms.saturating_sub(self.now_ms().wrapping_sub(started)).max(1));
         }
     }
 

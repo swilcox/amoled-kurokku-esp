@@ -79,6 +79,24 @@ pub fn blend565(bg: u16, fg: u16, a: u8) -> u16 {
     }
 }
 
+/// Blend `fg` over `bg` (both RGB565) with 8-bit alpha (0-255), rounded
+/// to 1/32 steps. Channels are spread across a u32 so one multiply blends
+/// all three (no divisions: this runs per pixel on antialiased edges).
+pub fn blend565_8(bg: u16, fg: u16, a: u8) -> u16 {
+    match a {
+        0 => bg,
+        255 => fg,
+        _ => {
+            const MASK: u32 = 0x07E0_F81F;
+            let spread = |c: u16| (c as u32 | (c as u32) << 16) & MASK;
+            let (b, f) = (spread(bg), spread(fg));
+            let a = (a as u32 + 4) >> 3;
+            let m = (f.wrapping_sub(b).wrapping_mul(a) >> 5).wrapping_add(b) & MASK;
+            (m | m >> 16) as u16
+        }
+    }
+}
+
 /// Saturating per-channel add of two RGB565 colors.
 pub fn add565(a: u16, b: u16) -> u16 {
     let ch = |shift: u32, mask: u16| ((a >> shift & mask) + (b >> shift & mask)).min(mask) << shift;
@@ -288,6 +306,52 @@ impl<'a> Canvas<'a> {
                     .max()
                     .unwrap_or(0);
                 *dst = to_wire(if level == 0 { base } else { add565(base, palette[level as usize]) });
+            }
+        }
+    }
+
+    /// Blit a full-screen row-RLE picture (see `build_support/analog.rs`)
+    /// shifted by (dx, dy); uncovered pixels are black.
+    pub fn blit_rle(&mut self, dx: i32, dy: i32, rle: &[u8]) {
+        let Some(r) = self.visible(SCREEN) else { return };
+        let n = LCD_W as i32;
+        let word = |at: usize| rle.get(at..at + 2).map(|b| u16::from_le_bytes([b[0], b[1]]));
+        for y in r.y0..=r.y1 {
+            let start = self.index(r.x0, y);
+            let row = &mut self.buf[start..start + r.width() as usize];
+            row.fill(0);
+            let sy = y - dy;
+            if !(0..LCD_H as i32).contains(&sy) {
+                continue;
+            }
+            let Some(off) = rle.get(4 * sy as usize..).and_then(|b| b.get(..4)) else { return };
+            let mut at = u32::from_le_bytes(off.try_into().unwrap()) as usize;
+            let mut x = dx;
+            while x < dx + n && x <= r.x1 {
+                let (Some(len), Some(color)) = (word(at), word(at + 2)) else { return };
+                at += 4;
+                let (x0, x1) = (x.max(r.x0), (x + len as i32 - 1).min(r.x1));
+                if x0 <= x1 {
+                    row[(x0 - r.x0) as usize..=(x1 - r.x0) as usize].fill(to_wire(color));
+                }
+                x += len as i32;
+            }
+        }
+    }
+
+    /// Paint `color` over `r` with per-pixel 8-bit coverage from `alpha(x,
+    /// y)` (0 = untouched, 255 = solid).
+    pub fn shade(&mut self, r: Rect, color: u16, mut alpha: impl FnMut(i32, i32) -> u8) {
+        let Some(r) = self.visible(r) else { return };
+        let fg = to_wire(color);
+        for y in r.y0..=r.y1 {
+            let start = self.index(r.x0, y);
+            for (i, dst) in self.buf[start..start + r.width() as usize].iter_mut().enumerate() {
+                match alpha(r.x0 + i as i32, y) {
+                    0 => {}
+                    255 => *dst = fg,
+                    a => *dst = to_wire(blend565_8(to_wire(*dst), color, a)),
+                }
             }
         }
     }
@@ -538,6 +602,26 @@ mod tests {
         assert_eq!(Rect::new(3, 5, 10, 12).aligned(), Some(Rect::new(2, 4, 11, 13)));
         assert_eq!(Rect::new(-5, 470, 600, 900).aligned(), Some(Rect::new(0, 470, 479, 479)));
         assert_eq!(Rect::new(500, 0, 600, 10).aligned(), None);
+    }
+
+    #[test]
+    fn blend8_is_close_to_exact() {
+        let ch = |c: u16| [(c >> 11) as f32 / 31.0, (c >> 5 & 0x3F) as f32 / 63.0, (c & 0x1F) as f32 / 31.0];
+        let colors = [0x0000, 0xFFFF, 0xF800, 0x07E0, 0x001F, 0x8410, 0x1234, 0xEDCB, 0x7BEF];
+        for &bg in &colors {
+            for &fg in &colors {
+                for a in [1u8, 7, 70, 128, 140, 200, 254] {
+                    let got = ch(blend565_8(bg, fg, a));
+                    let (b, f) = (ch(bg), ch(fg));
+                    for k in 0..3 {
+                        let want = b[k] + (f[k] - b[k]) * a as f32 / 255.0;
+                        assert!((got[k] - want).abs() < 0.06, "{bg:04x} {fg:04x} a={a} ch{k}: {} vs {want}", got[k]);
+                    }
+                }
+            }
+        }
+        assert_eq!(blend565_8(0x1234, 0xEDCB, 0), 0x1234);
+        assert_eq!(blend565_8(0x1234, 0xEDCB, 255), 0xEDCB);
     }
 
     #[test]

@@ -50,11 +50,7 @@ impl Widget for Clock {
     }
 
     fn frame_ms(&self) -> u32 {
-        if self.face.animating() {
-            1
-        } else {
-            50
-        }
+        self.face.frame_ms()
     }
 }
 

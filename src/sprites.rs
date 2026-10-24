@@ -5,3 +5,9 @@
 pub mod nixie {
     include!(concat!(env!("OUT_DIR"), "/nixie.rs"));
 }
+
+/// Analog clock dials (row-RLE) and the classic date window; see
+/// `build_support/analog.rs`.
+pub mod analog {
+    include!(concat!(env!("OUT_DIR"), "/analog.rs"));
+}

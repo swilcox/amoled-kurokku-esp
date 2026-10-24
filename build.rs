@@ -6,11 +6,14 @@ mod assetpack;
 mod fontgen;
 #[path = "build_support/nixie.rs"]
 mod nixie;
+#[path = "build_support/analog.rs"]
+mod analog;
 #[path = "build_support/segments.rs"]
 mod segments;
 
 /// Font for server-sent text (messages, status lines).
 const TEXT_FONT: &str = "assets/fonts/FiraSans-SemiBold.ttf";
+const DIAL_FONT: &str = "assets/fonts/LibreBaskerville.ttf";
 /// Printable ASCII plus common punctuation, symbols and Western European
 /// accented letters. Anything else renders as `?`.
 const TEXT_CHARS: &str = concat!(
@@ -96,6 +99,8 @@ fn main() {
         },
         // The info screen: ASCII is enough.
         fontgen::FontSpec { name: "TEXT_XS", file: TEXT_FONT, px: 34.0, chars: &TEXT_CHARS[..95] },
+        // Day of the month in the classic analog dial's date window.
+        fontgen::FontSpec { name: "DIAL_DATE", file: DIAL_FONT, px: 26.0, chars: "0123456789" },
         fontgen::FontSpec { name: "TEXT_S", file: TEXT_FONT, px: 44.0, chars: TEXT_CHARS },
         fontgen::FontSpec { name: "TEXT_M", file: TEXT_FONT, px: 64.0, chars: TEXT_CHARS },
         fontgen::FontSpec { name: "TEXT_L", file: TEXT_FONT, px: 140.0, chars: TEXT_CHARS },
@@ -128,6 +133,7 @@ fn main() {
     let mut pack = assetpack::Pack::default();
     fontgen::emit(out, &mut pack, sets);
     nixie::generate(root, out, &mut pack, "assets/fonts/FiraSans-ExtraLight.ttf", 205.0);
+    analog::generate(root, out, &mut pack, DIAL_FONT, 50.0);
     pack.finish(out);
 
     // Keep partitions.csv in sync with esp-idf-sys's cmake build dirs.

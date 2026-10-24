@@ -26,7 +26,7 @@ pub trait Widget: Scene + Send {
     /// Force a full repaint on the next tick (e.g. after a timezone change).
     fn invalidate(&mut self);
 
-    /// Preferred delay before the next tick.
+    /// Preferred time from the start of one tick to the next.
     fn frame_ms(&self) -> u32 {
         50
     }

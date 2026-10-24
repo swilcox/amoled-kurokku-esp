@@ -1,6 +1,7 @@
 //! Clock faces. Each face is a `Scene` that also tracks what it last showed,
 //! so it can report only the regions that changed.
 
+pub mod analog;
 pub mod flip;
 pub mod led;
 pub mod modern;
@@ -55,10 +56,19 @@ pub trait Face: Scene + Send {
     fn animating(&self) -> bool {
         false
     }
+
+    /// How soon to call `update` again.
+    fn frame_ms(&self) -> u32 {
+        if self.animating() {
+            1
+        } else {
+            50
+        }
+    }
 }
 
 /// Face names accepted by `face_for`.
-pub const STYLES: [&str; 4] = ["modern", "led", "flip", "nixie"];
+pub const STYLES: [&str; 7] = ["modern", "led", "flip", "nixie", "railway", "railway-black", "classic"];
 
 /// Build the face for a style name; unknown names give the modern face.
 pub fn face_for(style: Option<&str>, format_24h: bool) -> Box<dyn Face> {
@@ -66,6 +76,10 @@ pub fn face_for(style: Option<&str>, format_24h: bool) -> Box<dyn Face> {
         "led" => Box::new(led::LedFace::new(format_24h)),
         "flip" => Box::new(flip::FlipFace::new(format_24h)),
         "nixie" => Box::new(nixie::NixieFace::new(format_24h)),
+        // Analog faces ignore 12/24h.
+        "railway" => Box::new(analog::AnalogFace::new(&analog::RAILWAY)),
+        "railway-black" => Box::new(analog::AnalogFace::new(&analog::RAILWAY_DARK)),
+        "classic" => Box::new(analog::AnalogFace::new(&analog::CLASSIC_STYLE)),
         _ => Box::new(modern::ModernFace::new(format_24h)),
     }
 }
@@ -125,6 +139,21 @@ pub(crate) mod tests {
         f.update(0, &from);
         f.set_offset(3, -3);
         assert_eq!(f.update(settle, &to), vec![SCREEN]);
+    }
+
+    /// After every step, the incrementally rendered screen must equal a full
+    /// render of the face's current state: the dirty rects missed nothing.
+    pub fn check_frames(make: impl Fn() -> Box<dyn Face>, steps: &[(u32, LocalTime)]) {
+        let mut face = make();
+        let mut panel = MemPanel::default();
+        let mut r = Renderer::new(480 * 32);
+        for (ms, t) in steps {
+            let rects = face.update(*ms, t);
+            r.render(&mut panel, &*face, &rects).unwrap();
+            let mut full = MemPanel::default();
+            r.render(&mut full, &*face, &[SCREEN]).unwrap();
+            assert!(panel.pixels == full.pixels, "stale pixels at {ms} ms, {t:?}");
+        }
     }
 
     #[test]

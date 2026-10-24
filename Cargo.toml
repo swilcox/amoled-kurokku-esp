@@ -9,6 +9,10 @@ rust-version = "1.82"
 [profile.release]
 opt-level = "s"
 
+# Our own code at full speed: the per-pixel drawing loops need inlining.
+[profile.release.package.amoled-kurokku-esp]
+opt-level = 3
+
 [profile.dev]
 debug = true
 opt-level = "z"
