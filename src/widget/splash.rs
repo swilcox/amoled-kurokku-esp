@@ -36,12 +36,26 @@ impl Splash {
     }
 }
 
+/// A neon sign's brightness (0-255) `t` ms after it's switched on: a few
+/// stutters, then steady.
+pub fn strike(t: u32) -> u16 {
+    FLICKER.iter().rev().find(|(at, _)| *at <= t).map_or(0, |&(_, b)| b)
+}
+
+/// The sign's colors at `brightness` (0-255), RGB565 in wire order.
+pub fn sign_palette(brightness: u16, palette: &mut [u16; 256]) {
+    for (dst, &rgb) in palette.iter_mut().zip(&RAMP) {
+        let ch = |shift: u32| ((rgb >> shift & 0xFF) * brightness as u32 / 255) as u8;
+        *dst = to_wire(rgb565(ch(16), ch(8), ch(0)));
+    }
+}
+
 /// Sign brightness `t` ms in.
 fn brightness(t: u32) -> u16 {
     if t >= FADE_AT {
         return (255 * FADE_MS.saturating_sub(t - FADE_AT) / FADE_MS) as u16;
     }
-    FLICKER.iter().rev().find(|(at, _)| *at <= t).map_or(0, |&(_, b)| b)
+    strike(t)
 }
 
 impl Default for Splash {
@@ -61,10 +75,7 @@ impl Widget for Splash {
         if self.shown.replace(b) == Some(b) {
             return Step::Redraw(vec![]);
         }
-        for (dst, &rgb) in self.palette.iter_mut().zip(&RAMP) {
-            let ch = |shift: u32| ((rgb >> shift & 0xFF) * b as u32 / 255) as u8;
-            *dst = to_wire(rgb565(ch(16), ch(8), ch(0)));
-        }
+        sign_palette(b, &mut self.palette);
         Step::Redraw(vec![if first { SCREEN } else { Self::sign_rect() }])
     }
 

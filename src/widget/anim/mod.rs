@@ -2,6 +2,7 @@
 //! firmware's, but each is redone for a 480×480 color screen; they run
 //! until the next instruction.
 
+pub mod curtain;
 pub mod pong;
 pub mod sine;
 pub mod snake;
@@ -11,7 +12,7 @@ use super::Widget;
 use crate::rng::Rng;
 
 /// Animation names; `random` picks one of these.
-pub const ANIMATIONS: [&str; 4] = ["pong", "snake", "sine", "static"];
+pub const ANIMATIONS: [&str; 5] = ["pong", "snake", "sine", "static", "curtain"];
 
 /// Build the animation called `name`: one of ANIMATIONS or "random".
 /// Unknown names get a random one.
@@ -32,6 +33,7 @@ pub fn animation_for(name: &str, format_24h: bool) -> Box<dyn Widget> {
         "snake" => Box::new(snake::Snake::new(rng)),
         "sine" => Box::new(sine::Sine::new()),
         "static" => Box::new(snow::Snow::new()),
+        "curtain" => Box::new(curtain::Curtain::new()),
         _ => Box::new(pong::Pong::new(format_24h, rng)),
     }
 }
