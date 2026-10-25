@@ -22,9 +22,13 @@ const TRAIL_LEVELS: u8 = 15;
 const HEAD: u8 = TRAIL_LEVELS + 1;
 /// Glyph swaps per tick, among all cells (only lit ones show).
 const SWAPS: u32 = 8;
+/// Drops fall between this many rows per second.
+const FALL: (i32, i32) = (13, 36);
+/// Trail lengths, rows (the screen is 20 rows).
+const TRAIL: (i32, i32) = (14, 32);
 
 struct Drop {
-    /// Head row in 1/256 cells, speed in 1/256 cells per ms.
+    /// Head row in 1/256 cells, speed in 1/256 cells per second.
     head: i32,
     speed: i32,
     trail: i32,
@@ -50,7 +54,8 @@ impl Matrix {
         let mut colors = [0; HEAD as usize + 1];
         for l in 1..=TRAIL_LEVELS {
             let k = l as f32 / TRAIL_LEVELS as f32;
-            colors[l as usize] = rgb565((20.0 * k) as u8, (40.0 + 215.0 * k * k) as u8, (15.0 + 55.0 * k) as u8);
+            // A gentle fade, so the back of a long trail is still legible.
+            colors[l as usize] = rgb565((20.0 * k) as u8, (45.0 + 210.0 * k.powf(1.4)) as u8, (15.0 + 55.0 * k) as u8);
         }
         colors[HEAD as usize] = rgb565(215, 255, 220);
         let mut m = Self { rng, glyphs, colors, drops: Vec::new(), cell, drawn: vec![(0, 0); (COLS * ROWS) as usize], last_ms: None, first: true };
@@ -61,7 +66,7 @@ impl Matrix {
     /// A drop starting above the screen (anywhere down it, at the start).
     fn new_drop(&mut self, anywhere: bool) -> Drop {
         let start = if anywhere { self.rng.range(-ROWS, ROWS) } else { -self.rng.range(1, ROWS / 2) };
-        Drop { head: start * 256, speed: self.rng.range(2 * 256 / 100, 6 * 256 / 100), trail: self.rng.range(6, 18) }
+        Drop { head: start * 256, speed: self.rng.range(FALL.0 * 256, FALL.1 * 256), trail: self.rng.range(TRAIL.0, TRAIL.1) }
     }
 
     /// Brightness level each cell should have now.
@@ -85,7 +90,7 @@ impl Widget for Matrix {
         let dt = now_ms.wrapping_sub(self.last_ms.unwrap_or(now_ms)).min(100) as i32;
         self.last_ms = Some(now_ms);
         for col in 0..COLS as usize {
-            self.drops[col].head += self.drops[col].speed * dt;
+            self.drops[col].head += self.drops[col].speed * dt / 1000;
             let d = &self.drops[col];
             if (d.head >> 8) - d.trail > ROWS {
                 self.drops[col] = self.new_drop(false);
