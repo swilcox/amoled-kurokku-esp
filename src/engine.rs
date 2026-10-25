@@ -71,6 +71,7 @@ const NOTICE_MS: u32 = 1500;
 struct Shared {
     instruction: Option<Cue>,
     brightness: Option<u8>,
+    volume: Option<u8>,
     config: Option<ConfigUpdate>,
     /// Quiet hours started (true) or ended.
     quiet: Option<bool>,
@@ -319,6 +320,11 @@ impl Engine {
         }
 
         loop {
+            if let Some(v) = shared.lock().unwrap().volume.take() {
+                if let Some(a) = &self.audio {
+                    a.set_volume(v);
+                }
+            }
             let (instruction, brightness, config, quiet) = {
                 let mut s = shared.lock().unwrap();
                 // New content waits for an overlay to close.
@@ -706,6 +712,7 @@ fn network_loop(mut poller: HttpPoller, shared: &Mutex<Shared>, wifi: Option<Sha
     // re-sending brightness would undo a BOOT-button adjustment.
     let mut last_instruction: Option<Cue> = None;
     let mut last_brightness: Option<u8> = None;
+    let mut last_volume: Option<u8> = None;
     let mut last_config: Option<ConfigUpdate> = None;
     let mut last_quiet = false;
     let mut failures: u32 = 0;
@@ -726,6 +733,10 @@ fn network_loop(mut poller: HttpPoller, shared: &Mutex<Shared>, wifi: Option<Sha
                 if let Some(b) = resp.brightness.filter(|b| last_brightness != Some(*b)) {
                     s.brightness = Some(b);
                     last_brightness = Some(b);
+                }
+                if let Some(v) = resp.volume.filter(|v| last_volume != Some(*v)) {
+                    s.volume = Some(v);
+                    last_volume = Some(v);
                 }
                 if resp.display_off != last_quiet {
                     s.quiet = Some(resp.display_off);

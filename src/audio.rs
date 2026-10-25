@@ -6,6 +6,7 @@
 //! `spawn` starts an audio thread; `Audio::play` hands it a WAV URL (as
 //! for images: http(s)://, sd:/…) to stream to the speaker. A new sound
 //! cuts off the one playing. Between sounds the codec is powered down.
+//! `Audio::set_volume` applies from the next sound on.
 //!
 //! Register sequences follow Espressif's esp_codec_dev ES8311 driver, as
 //! used by the vendor demo (DAC only, slave mode, MCLK in, 16-bit I2S).
@@ -140,16 +141,26 @@ fn volume_reg(volume: u8) -> u8 {
     }
 }
 
+enum Command {
+    Play(String),
+    Volume(u8),
+}
+
 /// Handle to the audio thread.
 #[derive(Clone)]
 pub struct Audio {
-    tx: Sender<String>,
+    tx: Sender<Command>,
 }
 
 impl Audio {
     /// Play the WAV at `url` (cutting off any sound already playing).
     pub fn play(&self, url: &str) {
-        let _ = self.tx.send(url.to_string());
+        let _ = self.tx.send(Command::Play(url.to_string()));
+    }
+
+    /// Speaker volume 0-100, for sounds from now on.
+    pub fn set_volume(&self, volume: u8) {
+        let _ = self.tx.send(Command::Volume(volume.min(100)));
     }
 }
 
@@ -177,18 +188,27 @@ pub fn spawn<'d: 'static>(
     Ok(Audio { tx })
 }
 
-fn run(codec: Es8311, mut i2s: I2sDriver<'static, I2sTx>, rx: Receiver<String>, volume: u8) {
+fn run(codec: Es8311, mut i2s: I2sDriver<'static, I2sTx>, rx: Receiver<Command>, mut volume: u8) {
     let mut rate = 24000;
     let mut next = None;
     loop {
         let url = match next.take() {
             Some(u) => u,
             None => match rx.recv() {
-                Ok(u) => u,
+                Ok(Command::Play(u)) => u,
+                Ok(Command::Volume(v)) => {
+                    log::info!("audio: volume {v}");
+                    volume = v;
+                    continue;
+                }
                 Err(_) => return,
             },
         };
-        match play(&codec, &mut i2s, &mut rate, &url, volume, &rx) {
+        if volume == 0 {
+            log::info!("volume 0: not playing {url}");
+            continue;
+        }
+        match play(&codec, &mut i2s, &mut rate, &url, &mut volume, &rx) {
             Ok(cut_off_by) => next = cut_off_by,
             Err(e) => log::warn!("sound {url}: {e}"),
         }
@@ -199,7 +219,7 @@ fn run(codec: Es8311, mut i2s: I2sDriver<'static, I2sTx>, rx: Receiver<String>, 
 }
 
 /// Stream one sound. Returns the URL of a sound that interrupted it.
-fn play(codec: &Es8311, i2s: &mut I2sDriver<'static, I2sTx>, rate: &mut u32, url: &str, volume: u8, rx: &Receiver<String>) -> Result<Option<String>> {
+fn play(codec: &Es8311, i2s: &mut I2sDriver<'static, I2sTx>, rate: &mut u32, url: &str, volume: &mut u8, rx: &Receiver<Command>) -> Result<Option<String>> {
     let started = std::time::Instant::now();
     let mut r = media::open(url)?;
     let fmt = wav::read_header(&mut r)?;
@@ -210,7 +230,7 @@ fn play(codec: &Es8311, i2s: &mut I2sDriver<'static, I2sTx>, rate: &mut u32, url
         i2s.tx_reconfigure_std(&StdConfig::philips(fmt.sample_rate, DataBitWidth::Bits16))?;
         *rate = fmt.sample_rate;
     }
-    codec.start(fmt.sample_rate, volume)?;
+    codec.start(fmt.sample_rate, *volume)?;
     log::info!("sound {url}: {} Hz, {} ch, {} ms", fmt.sample_rate, fmt.channels, fmt.data_len as u64 * 1000 / (fmt.sample_rate as u64 * 2 * fmt.channels as u64));
 
     let mut left = fmt.data_len as usize;
@@ -218,7 +238,12 @@ fn play(codec: &Es8311, i2s: &mut I2sDriver<'static, I2sTx>, rate: &mut u32, url
     let mut out = Vec::with_capacity(CHUNK_FRAMES * 4);
     while left > 0 {
         match rx.try_recv() {
-            Ok(u) => return Ok(Some(u)),
+            Ok(Command::Play(u)) => return Ok(Some(u)),
+            // Mid-sound: takes effect at once.
+            Ok(Command::Volume(v)) => {
+                *volume = v;
+                codec.write(0x32, volume_reg(v))?;
+            }
             Err(TryRecvError::Disconnected) => return Ok(None),
             Err(TryRecvError::Empty) => {}
         }

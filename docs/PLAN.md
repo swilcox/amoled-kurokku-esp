@@ -131,12 +131,17 @@ The server's `animation` widget names (from led-kurokku-esp), each redone for a 
 - `matrix`: digital rain of mirrored half-width katakana (M PLUS Rounded subset), a white head and fading green trail per column, glyphs flickering; only changed cells redrawn, merged into runs per column: ~50 fps.
 - `random`: one of these, picked each time the instruction arrives.
 
+### Phase 8: Sound
+- Any instruction may carry `sound`: a WAV URL (http(s), sd:/, or server-relative, like images), played once after the instruction is shown, never during quiet hours. Poll responses may carry `volume` (0-100).
+- ES8311 codec on I2C 0x18, I2S0 (MCLK 19 at 256 × rate, BCLK 20, WS 22, DOUT 23), no amplifier pin; register sequences from esp_codec_dev. 16-bit PCM WAV, mono or stereo, 8-48 kHz, streamed by an audio thread; the codec is powered down between sounds.
+- Server: a sound library and a per-entry sound, plus a per-device volume.
+
 ### Ideas for later
 Things this screen could do that the LED clocks can't; none are scheduled.
 - Animations from lcd-kurokku not yet offered by the server: snow, sparkle, rain.
 - More animations: fireworks, starfield warp, aquarium, lava lamp, Doom fire, Conway's Life, plasma, boids/flocking, a bouncing DVD-style logo, aurora, rain on a window, a fish tank that knows the time of day.
 - Clock faces: word clock, flip-calendar with date, sunrise/sunset dial using the server's solar data, binary/Nixie variants, seasonal themes.
-- Audio: image + sound (the Lawson chime), chimes on the hour.
+- Audio: chimes on the hour (a clock entry with a sound on a cron), a startup sound with the splash.
 
 ## 5. Decisions
 - No battery is fitted: no battery or charging features.

@@ -28,7 +28,7 @@ fn main() -> anyhow::Result<()> {
     /// Attempts at the boot-time join. A failed join costs ~19 s, and the
     /// hopeless case (SSID absent) fails identically every time, so two.
     const JOIN_ATTEMPTS: u32 = 2;
-    /// Speaker volume, 0-100.
+    /// Speaker volume (0-100) until the server sets one.
     const SOUND_VOLUME: u8 = 60;
 
     esp_idf_svc::sys::link_patches();

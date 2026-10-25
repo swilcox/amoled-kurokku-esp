@@ -115,6 +115,9 @@ pub struct ServerResponse {
     pub instruction: Option<Cue>,
     /// 0-15, as on the LED displays.
     pub brightness: Option<u8>,
+    /// Speaker volume for sounds, 0-100 (amoled480 only).
+    #[serde(default)]
+    pub volume: Option<u8>,
     pub poll_interval_ms: Option<u64>,
     pub config: Option<ConfigUpdate>,
     /// Quiet hours: the screen should be off.
@@ -205,6 +208,7 @@ mod tests {
         assert_eq!(cue.sound.as_deref(), Some("/api/v1/sounds/fm.wav"));
         // Still fine without one, and on types this display can't show.
         assert_eq!(parse(r#"{"instruction":{"type":"clock"}}"#).instruction.unwrap().sound, None);
+        assert_eq!(parse(r#"{"volume":35}"#).volume, Some(35));
         let r = parse(r#"{"instruction":{"type":"raw_pixel","sound":"sd:/x.wav"}}"#).instruction.unwrap();
         assert_eq!((r.instruction, r.sound.as_deref()), (Instruction::Unsupported, Some("sd:/x.wav")));
     }
