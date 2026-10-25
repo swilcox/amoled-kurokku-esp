@@ -57,8 +57,14 @@ pub enum Instruction {
         #[serde(default = "default_slideshow_interval")]
         interval_secs: u32,
     },
+    /// One of `widget::anim::ANIMATIONS`, or "random"; runs until the next
+    /// instruction (`duration_secs` is the playlist's business).
+    Animation {
+        #[serde(default)]
+        animation: String,
+    },
     /// Instruction types this display can't show (raw_pixel, raw_segment,
-    /// animation, ...). The device falls back to the clock.
+    /// ...). The device falls back to the clock.
     #[serde(other)]
     Unsupported,
 }
@@ -178,6 +184,12 @@ mod tests {
         assert_eq!(r.instruction, None);
         let r = parse(r#"{"config":{"tz":"EST5EDT,M3.2.0,M11.1.0"}}"#);
         assert_eq!(r.config.unwrap().tz.as_deref(), Some("EST5EDT,M3.2.0,M11.1.0"));
+    }
+
+    #[test]
+    fn animation() {
+        let r = parse(r#"{"instruction":{"type":"animation","animation":"pong","duration_secs":30}}"#);
+        assert_eq!(r.instruction, Some(Instruction::Animation { animation: "pong".into() }));
     }
 
     #[test]

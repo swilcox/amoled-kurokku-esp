@@ -5,6 +5,7 @@
 //! regions that need repainting (possibly none) or that the widget is done,
 //! in which case the engine falls back to the clock.
 
+pub mod anim;
 pub mod clock;
 pub mod hold;
 pub mod info;

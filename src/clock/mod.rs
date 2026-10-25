@@ -84,7 +84,7 @@ pub fn face_for(style: Option<&str>, format_24h: bool) -> Box<dyn Face> {
         "railway" => Box::new(analog::AnalogFace::new(&analog::RAILWAY)),
         "railway-black" => Box::new(analog::AnalogFace::new(&analog::RAILWAY_DARK)),
         "classic" => Box::new(analog::AnalogFace::new(&analog::CLASSIC_STYLE)),
-        "random" => Box::new(random::RandomFace::new(format_24h, random::seed())),
+        "random" => Box::new(random::RandomFace::new(format_24h, crate::rng::seed())),
         _ => Box::new(modern::ModernFace::new(format_24h)),
     }
 }

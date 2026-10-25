@@ -17,6 +17,7 @@ pub mod imu;
 pub mod protocol;
 pub mod qoi;
 pub mod quiet;
+pub mod rng;
 pub mod rtc;
 pub mod sprites;
 pub mod touch;

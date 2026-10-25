@@ -121,6 +121,18 @@ Mapping as built (the table in `src/engine.rs` is the reference):
   - The firmware turns the panel off; any button wakes it until a minute after the last input (`quiet.rs`). When quiet hours end the panel comes back on.
   - The admin status panel previews amoled480 content: clock face style, message color and direction, library image thumbnail, slideshow folder, and "screen off" during quiet hours.
 
+### Phase 7: Animations
+The server's `animation` widget names (from led-kurokku-esp), each redone for a 480×480 color screen; they run until the next instruction (`src/widget/anim/`).
+- `pong`: a Pong clock. The scores are the hour and minute; the left player misses as the minute changes (the right as the hour does), with the last rallies timed so the point lands on the minute.
+- `static`: TV snow. `matrix`: katakana rain. `snake`: an AI snake game. `curtain`: velvet stage curtains that part to show the クロック neon sign. `sine`: an oscilloscope trace. `random`: one of these, picked each time.
+
+### Ideas for later
+Things this screen could do that the LED clocks can't; none are scheduled.
+- Animations from lcd-kurokku not yet offered by the server: snow, sparkle, rain.
+- More animations: fireworks, starfield warp, aquarium, lava lamp, Doom fire, Conway's Life, plasma, boids/flocking, a bouncing DVD-style logo, aurora, rain on a window, a fish tank that knows the time of day.
+- Clock faces: word clock, flip-calendar with date, sunrise/sunset dial using the server's solar data, binary/Nixie variants, seasonal themes.
+- Audio: image + sound (the Lawson chime), chimes on the hour.
+
 ## 5. Decisions
 - No battery is fitted: no battery or charging features.
 - Pictures are pulled from the server by URL (or read from microSD). The device runs no upload endpoint.

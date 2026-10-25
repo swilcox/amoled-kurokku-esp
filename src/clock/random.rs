@@ -4,6 +4,7 @@
 
 use super::{face_for, Face, LocalTime, FACES};
 use crate::gfx::{Canvas, Rect, Scene, SCREEN};
+use crate::rng::Rng;
 
 /// Minutes between switches; switches land on multiples of this.
 const SWITCH_MINUTES: u8 = 15;
@@ -13,8 +14,7 @@ pub struct RandomFace {
     /// Index into FACES of the face showing.
     current: usize,
     format_24h: bool,
-    /// xorshift32 state.
-    rng: u32,
+    rng: Rng,
     /// (hour, quarter) the current face belongs to; None until first update.
     slot: Option<(u8, u8)>,
     off: (i32, i32),
@@ -22,8 +22,8 @@ pub struct RandomFace {
 
 impl RandomFace {
     pub fn new(format_24h: bool, seed: u32) -> Self {
-        let mut rng = seed | 1;
-        let current = (xorshift(&mut rng) as usize) % FACES.len();
+        let mut rng = Rng::new(seed);
+        let current = rng.below(FACES.len() as u32) as usize;
         Self { face: face_for(Some(FACES[current]), format_24h), current, format_24h, rng, slot: None, off: (0, 0) }
     }
 
@@ -34,31 +34,12 @@ impl RandomFace {
 
     /// Switch to a different face, chosen at random.
     fn switch(&mut self) {
-        let step = 1 + xorshift(&mut self.rng) as usize % (FACES.len() - 1);
+        let step = 1 + self.rng.below(FACES.len() as u32 - 1) as usize;
         self.current = (self.current + step) % FACES.len();
         self.face = face_for(Some(FACES[self.current]), self.format_24h);
         let (dx, dy) = self.off;
         self.face.set_offset(dx, dy);
         log::info!("random clock face: {}", self.current());
-    }
-}
-
-fn xorshift(s: &mut u32) -> u32 {
-    *s ^= *s << 13;
-    *s ^= *s >> 17;
-    *s ^= *s << 5;
-    *s
-}
-
-/// A seed that differs from boot to boot (and run to run on the host).
-pub fn seed() -> u32 {
-    #[cfg(target_os = "espidf")]
-    {
-        unsafe { esp_idf_svc::sys::esp_random() }
-    }
-    #[cfg(not(target_os = "espidf"))]
-    {
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.subsec_nanos())
     }
 }
 

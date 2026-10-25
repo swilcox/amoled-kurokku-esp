@@ -50,7 +50,7 @@ use crate::quiet::Quiet;
 use crate::protocol::{panel_brightness, parse_color, scroll_px_per_ms, ConfigUpdate, Instruction};
 use crate::widget::message::{font_for, Direction, Message};
 use crate::touch::{Gesture, Swipe};
-use crate::widget::{clock::Clock, hold::Hold, info::Info, status::Status, Step, Widget};
+use crate::widget::{anim, clock::Clock, hold::Hold, info::Info, status::Status, Step, Widget};
 use crate::{image, media, rtc, udp_log, wifi};
 
 pub type SharedWifi = Arc<Mutex<BlockingWifi<EspWifi<'static>>>>;
@@ -549,6 +549,9 @@ impl Engine {
                 let font = font_for(size.as_deref(), dir);
                 let speed = scroll_px_per_ms(scroll_speed_ms);
                 self.set_widget(Box::new(Message::new(&text, font, color, dir, speed, repeats)), false);
+            }
+            Instruction::Animation { animation } => {
+                self.set_widget(anim::animation_for(&animation, self.format_24h), false);
             }
             Instruction::Ota { url } => self.ota(&url),
             Instruction::Image { url } => self.show_image(&url),
