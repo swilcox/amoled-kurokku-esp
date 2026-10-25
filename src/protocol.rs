@@ -99,9 +99,20 @@ pub struct ConfigUpdate {
     pub ntp_server: Option<String>,
 }
 
+/// An instruction as sent: what to show, plus a sound to play once as it
+/// appears (any instruction may carry one). `sound` is a WAV URL in the
+/// same forms as image URLs: http(s)://, sd:/path, or server-relative.
+#[derive(Deserialize, Debug, Clone, PartialEq)]
+pub struct Cue {
+    #[serde(flatten)]
+    pub instruction: Instruction,
+    #[serde(default)]
+    pub sound: Option<String>,
+}
+
 #[derive(Deserialize, Debug, Clone, PartialEq)]
 pub struct ServerResponse {
-    pub instruction: Option<Instruction>,
+    pub instruction: Option<Cue>,
     /// 0-15, as on the LED displays.
     pub brightness: Option<u8>,
     pub poll_interval_ms: Option<u64>,
@@ -145,12 +156,12 @@ mod tests {
     #[test]
     fn parses_server_clock_and_message() {
         let r = parse(r#"{"instruction":{"type":"clock","format_24h":false,"duration_secs":30},"brightness":8,"poll_interval_ms":5000}"#);
-        assert_eq!(r.instruction, Some(Instruction::Clock { format_24h: false, style: None }));
+        assert_eq!(r.instruction.map(|c| c.instruction), Some(Instruction::Clock { format_24h: false, style: None }));
         assert_eq!(r.brightness, Some(8));
 
         let r = parse(r#"{"instruction":{"type":"message","text":"72°F","scroll_speed_ms":50,"repeats":-1,"duration_secs":10}}"#);
         assert_eq!(
-            r.instruction,
+            r.instruction.map(|c| c.instruction),
             Some(Instruction::Message {
                 text: "72°F".into(),
                 scroll_speed_ms: 50,
@@ -165,7 +176,7 @@ mod tests {
     #[test]
     fn amoled_fields_and_defaults() {
         let r = parse(r##"{"instruction":{"type":"message","text":"hi","direction":"up","color":"#ff8800","size":"large"}}"##);
-        let Some(Instruction::Message { scroll_speed_ms, repeats, direction, color, size, .. }) = r.instruction else {
+        let Some(Instruction::Message { scroll_speed_ms, repeats, direction, color, size, .. }) = r.instruction.map(|c| c.instruction) else {
             panic!("not a message");
         };
         assert_eq!((scroll_speed_ms, repeats), (50, 1));
@@ -177,27 +188,39 @@ mod tests {
     #[test]
     fn unsupported_types_and_empty_response() {
         let r = parse(r#"{"instruction":{"type":"raw_pixel","data":[1,2,3]}}"#);
-        assert_eq!(r.instruction, Some(Instruction::Unsupported));
+        assert_eq!(r.instruction.map(|c| c.instruction), Some(Instruction::Unsupported));
         let r = parse(r#"{"brightness":3}"#);
         assert!(!r.display_off);
         assert!(parse(r#"{"display_off":true}"#).display_off);
-        assert_eq!(r.instruction, None);
+        assert_eq!(r.instruction.map(|c| c.instruction), None);
         let r = parse(r#"{"config":{"tz":"EST5EDT,M3.2.0,M11.1.0"}}"#);
         assert_eq!(r.config.unwrap().tz.as_deref(), Some("EST5EDT,M3.2.0,M11.1.0"));
     }
 
     #[test]
+    fn any_instruction_can_carry_a_sound() {
+        let r = parse(r#"{"instruction":{"type":"image","url":"/api/v1/images/fm.qoi","sound":"/api/v1/sounds/fm.wav"}}"#);
+        let cue = r.instruction.unwrap();
+        assert_eq!(cue.instruction, Instruction::Image { url: "/api/v1/images/fm.qoi".into() });
+        assert_eq!(cue.sound.as_deref(), Some("/api/v1/sounds/fm.wav"));
+        // Still fine without one, and on types this display can't show.
+        assert_eq!(parse(r#"{"instruction":{"type":"clock"}}"#).instruction.unwrap().sound, None);
+        let r = parse(r#"{"instruction":{"type":"raw_pixel","sound":"sd:/x.wav"}}"#).instruction.unwrap();
+        assert_eq!((r.instruction, r.sound.as_deref()), (Instruction::Unsupported, Some("sd:/x.wav")));
+    }
+
+    #[test]
     fn animation() {
         let r = parse(r#"{"instruction":{"type":"animation","animation":"pong","duration_secs":30}}"#);
-        assert_eq!(r.instruction, Some(Instruction::Animation { animation: "pong".into() }));
+        assert_eq!(r.instruction.map(|c| c.instruction), Some(Instruction::Animation { animation: "pong".into() }));
     }
 
     #[test]
     fn image_and_slideshow() {
         let r = parse(r#"{"instruction":{"type":"image","url":"http://x/cat.qoi","duration_secs":30}}"#);
-        assert_eq!(r.instruction, Some(Instruction::Image { url: "http://x/cat.qoi".into() }));
+        assert_eq!(r.instruction.map(|c| c.instruction), Some(Instruction::Image { url: "http://x/cat.qoi".into() }));
         let r = parse(r#"{"instruction":{"type":"slideshow"}}"#);
-        assert_eq!(r.instruction, Some(Instruction::Slideshow { path: "sd:/images".into(), interval_secs: 10 }));
+        assert_eq!(r.instruction.map(|c| c.instruction), Some(Instruction::Slideshow { path: "sd:/images".into(), interval_secs: 10 }));
     }
 
     #[test]

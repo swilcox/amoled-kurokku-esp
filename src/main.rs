@@ -23,11 +23,13 @@ fn main() -> anyhow::Result<()> {
     use amoled_kurokku_esp::poller::{HttpPoller, FIRMWARE_VERSION};
     use amoled_kurokku_esp::widget::{splash::Splash, status::Status};
     use amoled_kurokku_esp::gfx::{Renderer, Solid, SCREEN};
-    use amoled_kurokku_esp::{assets, color, config, media, ota, pmic, rtc, touch, udp_log, wifi};
+    use amoled_kurokku_esp::{assets, audio, color, config, media, ota, pmic, rtc, touch, udp_log, wifi};
 
     /// Attempts at the boot-time join. A failed join costs ~19 s, and the
     /// hopeless case (SSID absent) fails identically every time, so two.
     const JOIN_ATTEMPTS: u32 = 2;
+    /// Speaker volume, 0-100.
+    const SOUND_VOLUME: u8 = 60;
 
     esp_idf_svc::sys::link_patches();
     udp_log::init();
@@ -92,8 +94,14 @@ fn main() -> anyhow::Result<()> {
     log::info!("time from RTC: {utc:?} UTC");
     touch::init()?;
 
-    let hw = Hardware { lcd, i2c: Arc::new(Mutex::new(i2c)) };
+    let i2c = Arc::new(Mutex::new(i2c));
+    let hw = Hardware { lcd, i2c: i2c.clone() };
     let mut engine = Engine::new(cfg.clone(), nvs_partition.clone(), hw)?;
+    // Sound is optional: without the codec, instructions still show.
+    match audio::spawn(i2c, p.i2s0, p.pins.gpio19, p.pins.gpio20, p.pins.gpio22, p.pins.gpio23, SOUND_VOLUME) {
+        Ok(a) => engine.set_audio(a),
+        Err(e) => log::warn!("audio unavailable: {e}"),
+    }
     engine.play(Box::new(Splash::new()));
 
     if !cfg.has_wifi_config() {

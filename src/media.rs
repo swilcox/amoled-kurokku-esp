@@ -84,7 +84,7 @@ pub fn open(url: &str) -> Result<Box<dyn Read>> {
         return Ok(Box::new(f));
     }
     if !(url.starts_with("http://") || url.starts_with("https://")) {
-        bail!("unsupported image URL {url:?}");
+        bail!("unsupported URL {url:?}");
     }
     let mut conn = EspHttpConnection::new(&HttpConfig {
         timeout: Some(Duration::from_secs(15)),

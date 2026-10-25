@@ -19,6 +19,11 @@ impl Quiet {
         !active
     }
 
+    /// Inside quiet hours (even while a button has woken the screen).
+    pub fn active(&self) -> bool {
+        self.active
+    }
+
     /// Input at `now` (a press or a gesture): during quiet hours, keeps the
     /// screen awake for another `WAKE_MS`.
     pub fn input(&mut self, now: u32) {

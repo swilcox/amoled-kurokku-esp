@@ -21,8 +21,11 @@ pub mod rng;
 pub mod rtc;
 pub mod sprites;
 pub mod touch;
+pub mod wav;
 pub mod widget;
 
+#[cfg(target_os = "espidf")]
+pub mod audio;
 #[cfg(target_os = "espidf")]
 pub mod co5300;
 #[cfg(target_os = "espidf")]

@@ -47,7 +47,8 @@ use crate::gfx::{Renderer, Rotation};
 use crate::input::{self, AppliedRotation, Input, SharedI2c};
 use crate::poller::{HttpPoller, FIRMWARE_VERSION};
 use crate::quiet::Quiet;
-use crate::protocol::{panel_brightness, parse_color, scroll_px_per_ms, ConfigUpdate, Instruction};
+use crate::audio::Audio;
+use crate::protocol::{panel_brightness, parse_color, scroll_px_per_ms, ConfigUpdate, Cue, Instruction};
 use crate::widget::message::{font_for, Direction, Message};
 use crate::touch::{Gesture, Swipe};
 use crate::widget::{anim, clock::Clock, hold::Hold, info::Info, status::Status, Step, Widget};
@@ -68,7 +69,7 @@ const NOTICE_MS: u32 = 1500;
 /// server link's health for the info screen.
 #[derive(Default)]
 struct Shared {
-    instruction: Option<Instruction>,
+    instruction: Option<Cue>,
     brightness: Option<u8>,
     config: Option<ConfigUpdate>,
     /// Quiet hours started (true) or ended.
@@ -117,6 +118,8 @@ pub struct Engine {
     applied: AppliedRotation,
     /// Device events for the network thread to report (None = offline).
     events: Option<Sender<&'static str>>,
+    /// The speaker, if the codec came up.
+    audio: Option<Audio>,
 }
 
 /// An SD-card slideshow in progress.
@@ -170,6 +173,7 @@ impl Engine {
             standing: None,
             applied,
             events: None,
+            audio: None,
         })
     }
 
@@ -332,8 +336,12 @@ impl Engine {
             if let Some(update) = config {
                 self.apply_config(&update);
             }
-            if let Some(inst) = instruction {
-                self.apply_instruction(inst);
+            if let Some(cue) = instruction {
+                self.apply_instruction(cue.instruction);
+                // After the picture is up, so they arrive together.
+                if let Some(sound) = cue.sound {
+                    self.play_sound(&sound);
+                }
             }
 
             if let Some(epoch) = wifi::take_ntp_sync() {
@@ -580,12 +588,32 @@ impl Engine {
 
     /// Stream an image onto the panel and hold it there. A URL starting
     /// with `/` (the server's image library) is relative to the server.
-    fn show_image(&mut self, url: &str) {
-        let started = Instant::now();
-        let url = match url.starts_with('/') {
+    /// A media URL as given, or prefixed with the server for `/…` paths
+    /// (its image and sound libraries).
+    fn resolve(&self, url: &str) -> String {
+        match url.starts_with('/') {
             true => format!("{}{url}", self.cfg.server_url.trim_end_matches('/')),
             false => url.to_string(),
-        };
+        }
+    }
+
+    /// Attach the speaker; sounds on instructions play once it's set.
+    pub fn set_audio(&mut self, audio: Audio) {
+        self.audio = Some(audio);
+    }
+
+    /// Play a sound that came with an instruction, unless it's quiet hours.
+    fn play_sound(&self, url: &str) {
+        match &self.audio {
+            _ if self.quiet.active() => log::info!("quiet hours: not playing {url}"),
+            Some(a) => a.play(&self.resolve(url)),
+            None => log::warn!("no audio; not playing {url}"),
+        }
+    }
+
+    fn show_image(&mut self, url: &str) {
+        let started = Instant::now();
+        let url = self.resolve(url);
         let url = url.as_str();
         let result = media::open(url).and_then(|r| image::show(&mut self.renderer, &mut self.hw.lcd, r));
         match result {
@@ -676,7 +704,7 @@ fn network_loop(mut poller: HttpPoller, shared: &Mutex<Shared>, wifi: Option<Sha
     // The server returns the *current* desired state on every poll, so only
     // forward changes: re-sending would restart the active widget, and
     // re-sending brightness would undo a BOOT-button adjustment.
-    let mut last_instruction: Option<Instruction> = None;
+    let mut last_instruction: Option<Cue> = None;
     let mut last_brightness: Option<u8> = None;
     let mut last_config: Option<ConfigUpdate> = None;
     let mut last_quiet = false;
