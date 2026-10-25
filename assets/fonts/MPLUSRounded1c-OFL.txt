@@ -1,7 +1,8 @@
 Copyright 2016 The Rounded M+ Project Authors.
 
 (MPLUSRounded1c-Medium-subset.ttf is M PLUS Rounded 1c Medium from
-google/fonts, subset to the glyphs クロック for the boot splash.)
+google/fonts, subset to クロック for the neon sign, and the half-width
+katakana, digits and a few symbols for the matrix animation.)
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:

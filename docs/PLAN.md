@@ -128,7 +128,8 @@ The server's `animation` widget names (from led-kurokku-esp), each redone for a 
 - `sine`: an oscilloscope: a glowing trace on a graticule whose amplitude, wavelength and a little third harmonic drift; fixed-point per column, redrawn in 8-px strips (23–45 fps).
 - `static`: TV snow: grey 3-px grains with scanlines and a softly brighter band rolling down, full screen at ~31 fps.
 - `curtain`: red velvet curtains under a scalloped valance part to show the クロック neon sign, which strikes up as they open; hold, close, repeat. One row of curtain per frame, copied down the screen: 37–48 fps while moving, nothing redrawn while still.
-- `matrix`: katakana rain. `random`: one of these, picked each time.
+- `matrix`: digital rain of mirrored half-width katakana (M PLUS Rounded subset), a white head and fading green trail per column, glyphs flickering; only changed cells redrawn, merged into runs per column: ~50 fps.
+- `random`: one of these, picked each time the instruction arrives.
 
 ### Ideas for later
 Things this screen could do that the LED clocks can't; none are scheduled.

@@ -15,6 +15,8 @@ mod segments;
 
 /// Font for server-sent text (messages, status lines).
 const TEXT_FONT: &str = "assets/fonts/FiraSans-SemiBold.ttf";
+/// Matrix rain glyphs: a few symbols, digits, Z and the half-width katakana.
+const MATRIX_CHARS: &str = "*+-.0123456789:<=>Z|ｦｧｨｩｪｫｬｭｮｯｰｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ";
 const DIAL_FONT: &str = "assets/fonts/LibreBaskerville.ttf";
 /// Printable ASCII plus common punctuation, symbols and Western European
 /// accented letters. Anything else renders as `?`.
@@ -106,8 +108,16 @@ fn main() {
         fontgen::FontSpec { name: "TEXT_S", file: TEXT_FONT, px: 44.0, chars: TEXT_CHARS },
         fontgen::FontSpec { name: "TEXT_M", file: TEXT_FONT, px: 64.0, chars: TEXT_CHARS },
         fontgen::FontSpec { name: "TEXT_L", file: TEXT_FONT, px: 140.0, chars: TEXT_CHARS },
+        // Matrix rain: half-width katakana, digits and a few symbols.
+        fontgen::FontSpec { name: "MATRIX", file: "assets/fonts/MPLUSRounded1c-Medium-subset.ttf", px: 22.0, chars: MATRIX_CHARS },
     ];
     let mut sets: Vec<fontgen::GlyphSet> = ttf_specs.iter().map(|s| fontgen::from_ttf(root, s)).collect();
+    // The film's rain is mirrored.
+    for g in sets.iter_mut().filter(|s| s.name == "MATRIX").flat_map(|s| s.glyphs.iter_mut()) {
+        for row in g.alpha.chunks_mut(g.w.max(1)) {
+            row.reverse();
+        }
+    }
     // 7-segment LED digits: big for HH:MM, small for seconds.
     sets.push(segments::led_set(&segments::SegSpec {
         name: "LED_BIG",

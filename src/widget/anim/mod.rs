@@ -3,6 +3,7 @@
 //! until the next instruction.
 
 pub mod curtain;
+pub mod matrix;
 pub mod pong;
 pub mod sine;
 pub mod snake;
@@ -12,7 +13,7 @@ use super::Widget;
 use crate::rng::Rng;
 
 /// Animation names; `random` picks one of these.
-pub const ANIMATIONS: [&str; 5] = ["pong", "snake", "sine", "static", "curtain"];
+pub const ANIMATIONS: [&str; 6] = ["static", "pong", "matrix", "snake", "curtain", "sine"];
 
 /// Build the animation called `name`: one of ANIMATIONS or "random".
 /// Unknown names get a random one.
@@ -34,6 +35,7 @@ pub fn animation_for(name: &str, format_24h: bool) -> Box<dyn Widget> {
         "sine" => Box::new(sine::Sine::new()),
         "static" => Box::new(snow::Snow::new()),
         "curtain" => Box::new(curtain::Curtain::new()),
+        "matrix" => Box::new(matrix::Matrix::new(rng)),
         _ => Box::new(pong::Pong::new(format_24h, rng)),
     }
 }
