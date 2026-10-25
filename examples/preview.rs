@@ -6,6 +6,7 @@
 //!     just preview message "72°F" [up] [small|medium|large] [@ms] [#rrggbb]
 //!     just preview status "KUROKKU" "192.168.1.50"
 //!     just preview info                          # the info screen, sample values
+//!     just preview splash [@ms]                  # boot splash (fully lit at @1500)
 //!
 //! Output defaults to target/preview/<kind>.png. `@ms` renders a scrolling
 //! message as it looks that many milliseconds in. For clocks, `change` shows
@@ -20,7 +21,7 @@ use amoled_kurokku_esp::clock::LocalTime;
 use amoled_kurokku_esp::color::WHITE;
 use amoled_kurokku_esp::gfx::{MemPanel, Renderer};
 use amoled_kurokku_esp::protocol::{parse_color, scroll_px_per_ms};
-use amoled_kurokku_esp::widget::{clock::Clock, info::Info, message, status::Status, Step, Widget};
+use amoled_kurokku_esp::widget::{clock::Clock, info::Info, message, splash::Splash, status::Status, Step, Widget};
 
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -45,6 +46,7 @@ fn main() -> anyhow::Result<()> {
             let detail = words.get(2).copied().unwrap_or("");
             ("status", Box::new(Status::new(title, detail, None)))
         }
+        Some("splash") => ("splash", Box::new(Splash::new())),
         Some("info") => {
             let rows = [
                 ("IP", "192.168.1.143"),

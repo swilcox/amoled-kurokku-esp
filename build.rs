@@ -8,6 +8,8 @@ mod fontgen;
 mod nixie;
 #[path = "build_support/analog.rs"]
 mod analog;
+#[path = "build_support/neon.rs"]
+mod neon;
 #[path = "build_support/segments.rs"]
 mod segments;
 
@@ -134,6 +136,7 @@ fn main() {
     fontgen::emit(out, &mut pack, sets);
     nixie::generate(root, out, &mut pack, "assets/fonts/FiraSans-ExtraLight.ttf", 205.0);
     analog::generate(root, out, &mut pack, DIAL_FONT, 50.0);
+    neon::generate(root, out, &mut pack, "assets/fonts/MPLUSRounded1c-Medium-subset.ttf");
     pack.finish(out);
 
     // Keep partitions.csv in sync with esp-idf-sys's cmake build dirs.

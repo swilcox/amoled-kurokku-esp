@@ -188,6 +188,25 @@ impl Engine {
         self.step();
     }
 
+    /// Run `widget` until it's done before returning (the boot splash):
+    /// nothing else is ticked meanwhile.
+    pub fn play(&mut self, mut widget: Box<dyn Widget>) {
+        loop {
+            let started = self.now_ms();
+            match widget.tick(started, &clock::now_local()) {
+                Step::Done => return,
+                Step::Redraw(rects) if !rects.is_empty() => {
+                    if let Err(e) = self.renderer.render(&mut self.hw.lcd, &*widget, &rects) {
+                        log::error!("render failed: {e}");
+                    }
+                }
+                Step::Redraw(_) => {}
+            }
+            let elapsed = self.now_ms().wrapping_sub(started);
+            FreeRtos::delay_ms(widget.frame_ms().saturating_sub(elapsed).max(1));
+        }
+    }
+
     fn set_widget(&mut self, widget: Box<dyn Widget>, is_clock: bool) {
         self.widget = widget;
         self.is_clock = is_clock;

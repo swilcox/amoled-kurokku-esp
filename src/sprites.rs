@@ -11,3 +11,9 @@ pub mod nixie {
 pub mod analog {
     include!(concat!(env!("OUT_DIR"), "/analog.rs"));
 }
+
+/// The boot splash's neon sign (8-bit intensity) and its color ramp; see
+/// `build_support/neon.rs`.
+pub mod neon {
+    include!(concat!(env!("OUT_DIR"), "/neon.rs"));
+}

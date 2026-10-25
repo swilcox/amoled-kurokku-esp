@@ -21,7 +21,7 @@ fn main() -> anyhow::Result<()> {
     use amoled_kurokku_esp::co5300::Co5300;
     use amoled_kurokku_esp::engine::{Engine, Hardware};
     use amoled_kurokku_esp::poller::{HttpPoller, FIRMWARE_VERSION};
-    use amoled_kurokku_esp::widget::status::Status;
+    use amoled_kurokku_esp::widget::{splash::Splash, status::Status};
     use amoled_kurokku_esp::gfx::{Renderer, Solid, SCREEN};
     use amoled_kurokku_esp::{assets, color, config, media, ota, pmic, rtc, touch, udp_log, wifi};
 
@@ -94,7 +94,7 @@ fn main() -> anyhow::Result<()> {
 
     let hw = Hardware { lcd, i2c: Arc::new(Mutex::new(i2c)) };
     let mut engine = Engine::new(cfg.clone(), nvs_partition.clone(), hw)?;
-    engine.show(Box::new(Status::new("KUROKKU", env!("CARGO_PKG_VERSION"), None)));
+    engine.play(Box::new(Splash::new()));
 
     if !cfg.has_wifi_config() {
         log::warn!("no WiFi config; running offline");

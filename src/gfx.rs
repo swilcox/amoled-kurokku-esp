@@ -310,6 +310,23 @@ impl<'a> Canvas<'a> {
         }
     }
 
+    /// Blit a `w` x `h` picture of 8-bit indices (row-major) at (x, y),
+    /// colored through `palette`, whose entries are already in wire order.
+    pub fn blit_indexed(&mut self, x: i32, y: i32, w: usize, h: usize, idx: &[u8], palette: &[u16; 256]) {
+        let Some(r) = self.visible(Rect::from_size(x, y, w as i32, h as i32)) else { return };
+        if idx.len() < w * h {
+            return; // no asset pack mapped
+        }
+        for py in r.y0..=r.y1 {
+            let src = (py - y) as usize * w + (r.x0 - x) as usize;
+            let start = self.index(r.x0, py);
+            let n = r.width() as usize;
+            for (dst, &i) in self.buf[start..start + n].iter_mut().zip(&idx[src..src + n]) {
+                *dst = palette[i as usize];
+            }
+        }
+    }
+
     /// Blit a full-screen row-RLE picture (see `build_support/analog.rs`)
     /// shifted by (dx, dy); uncovered pixels are black.
     pub fn blit_rle(&mut self, dx: i32, dy: i32, rle: &[u8]) {

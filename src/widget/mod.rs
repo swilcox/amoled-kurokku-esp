@@ -9,6 +9,7 @@ pub mod clock;
 pub mod hold;
 pub mod info;
 pub mod message;
+pub mod splash;
 pub mod status;
 
 use crate::clock::LocalTime;
