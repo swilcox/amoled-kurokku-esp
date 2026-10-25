@@ -356,6 +356,16 @@ impl<'a> Canvas<'a> {
         }
     }
 
+    /// Write `r` row by row: `f(y, x0, row)` fills the visible part of row
+    /// `y`, which starts at column `x0`, with wire-order pixels.
+    pub fn rows(&mut self, r: Rect, mut f: impl FnMut(i32, i32, &mut [u16])) {
+        let Some(r) = self.visible(r) else { return };
+        for y in r.y0..=r.y1 {
+            let start = self.index(r.x0, y);
+            f(y, r.x0, &mut self.buf[start..start + r.width() as usize]);
+        }
+    }
+
     /// Recolor each pixel of `r`: `f(x, y, current)` returns its new color
     /// (both RGB565).
     pub fn map(&mut self, r: Rect, mut f: impl FnMut(i32, i32, u16) -> u16) {
