@@ -356,6 +356,18 @@ impl<'a> Canvas<'a> {
         }
     }
 
+    /// Recolor each pixel of `r`: `f(x, y, current)` returns its new color
+    /// (both RGB565).
+    pub fn map(&mut self, r: Rect, mut f: impl FnMut(i32, i32, u16) -> u16) {
+        let Some(r) = self.visible(r) else { return };
+        for y in r.y0..=r.y1 {
+            let start = self.index(r.x0, y);
+            for (i, dst) in self.buf[start..start + r.width() as usize].iter_mut().enumerate() {
+                *dst = to_wire(f(r.x0 + i as i32, y, to_wire(*dst)));
+            }
+        }
+    }
+
     /// Paint `color` over `r` with per-pixel 8-bit coverage from `alpha(x,
     /// y)` (0 = untouched, 255 = solid).
     pub fn shade(&mut self, r: Rect, color: u16, mut alpha: impl FnMut(i32, i32) -> u8) {

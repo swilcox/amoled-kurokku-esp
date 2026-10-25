@@ -125,7 +125,8 @@ Mapping as built (the table in `src/engine.rs` is the reference):
 The server's `animation` widget names (from led-kurokku-esp), each redone for a 480×480 color screen; they run until the next instruction (`src/widget/anim/`).
 - `pong`: a Pong clock. The scores are the hour and minute; the left player misses as the minute changes (the right as the hour does), with the last rallies timed so the point lands on the minute.
 - `snake`: the computer plays Snake: shortest path to the food when it can still reach its tail afterwards, otherwise the move with most room; blinks and restarts when boxed in (or at 220 segments).
-- `static`: TV snow. `matrix`: katakana rain. `curtain`: velvet stage curtains that part to show the クロック neon sign. `sine`: an oscilloscope trace. `random`: one of these, picked each time.
+- `sine`: an oscilloscope: a glowing trace on a graticule whose amplitude, wavelength and a little third harmonic drift; fixed-point per column, redrawn in 8-px strips (23–45 fps).
+- `static`: TV snow. `matrix`: katakana rain. `curtain`: velvet stage curtains that part to show the クロック neon sign. `random`: one of these, picked each time.
 
 ### Ideas for later
 Things this screen could do that the LED clocks can't; none are scheduled.
