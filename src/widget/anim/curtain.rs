@@ -1,6 +1,6 @@
 //! `curtain`: red velvet stage curtains under a scalloped valance. They
-//! part to show the クロック neon sign, which strikes up as they open, hold
-//! a while, close again, and so on.
+//! part on a dark クロック neon sign, which flickers to life once they're
+//! open; they hold a while, close again, and so on.
 //!
 //! The curtains are the same on every row, so one row of them is worked
 //! out per frame and copied down the screen.
@@ -24,6 +24,8 @@ const HOLD_CLOSED: u32 = 1500;
 const MOVE: u32 = 3200;
 const HOLD_OPEN: u32 = 9000;
 const CYCLE: u32 = HOLD_CLOSED + MOVE + HOLD_OPEN + MOVE;
+/// The sign strikes up this long after the curtains are fully open.
+const STRIKE_AFTER: u32 = 700;
 /// Valance: lowest point of its scallops, scallop width and depth.
 const VALANCE: i32 = 62;
 const SCALLOP_W: i32 = 80;
@@ -72,8 +74,9 @@ fn timeline(t: u32) -> (i32, u16) {
     } else {
         OPEN + span * smoothstep(t - closing, MOVE) / 1024
     };
-    // The sign switches on as the curtains start to part, off once shut.
-    let sign = if t < opening { 0 } else { strike(t - opening) };
+    // The sign switches on once the curtains are open, off once shut.
+    let lit = opening + MOVE + STRIKE_AFTER;
+    let sign = if t < lit { 0 } else { strike(t - lit) };
     (width, sign)
 }
 
@@ -231,7 +234,11 @@ mod tests {
         assert_eq!(timeline(0), (CLOSED, 0));
         let (w, _) = timeline(HOLD_CLOSED + MOVE / 2);
         assert!(OPEN < w && w < CLOSED);
-        assert_eq!(timeline(HOLD_CLOSED + MOVE + 1000), (OPEN, 255));
+        // Open on a dark sign, which then flickers to life.
+        assert_eq!(timeline(HOLD_CLOSED + MOVE), (OPEN, 0));
+        assert_eq!(timeline(HOLD_CLOSED + MOVE + STRIKE_AFTER - 1), (OPEN, 0));
+        assert_eq!(timeline(HOLD_CLOSED + MOVE + STRIKE_AFTER + 300), (OPEN, 140));
+        assert_eq!(timeline(HOLD_CLOSED + MOVE + STRIKE_AFTER + 1000), (OPEN, 255));
         assert!(timeline(CYCLE - 1).0 >= CLOSED - 1);
         assert_eq!(timeline(CYCLE), (CLOSED, 0));
     }
@@ -240,6 +247,6 @@ mod tests {
     fn incremental_redraws_match() {
         let t = LocalTime::default();
         // Through opening, the sign striking, and a little of the hold.
-        check_incremental(Box::new(Curtain::new()), (0..(HOLD_CLOSED + MOVE + 900) / 40).map(|i| (i * 40, t)));
+        check_incremental(Box::new(Curtain::new()), (0..(HOLD_CLOSED + MOVE + STRIKE_AFTER + 900) / 20).map(|i| (i * 20, t)));
     }
 }
