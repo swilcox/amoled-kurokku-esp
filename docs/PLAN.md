@@ -130,6 +130,7 @@ The server's `animation` widget names (from led-kurokku-esp), each redone for a 
 - `curtain`: red velvet curtains under a scalloped valance part on the dark クロック neon sign, which flickers to life once they're open; hold, close, repeat. One row of curtain per frame, copied down the screen: 37–48 fps while moving, nothing redrawn while still.
 - `matrix`: digital rain of mirrored half-width katakana (M PLUS Rounded subset), a white head and fading green trail per column, glyphs flickering; only changed cells redrawn, merged into runs per column: ~50 fps.
 - `starfield`: flying through space: 200 stars in 3-D, each drawn as a segment from where it was 45 ms ago (dim) to where it is (bright), growing as it nears; every 22 s a jump to warp (7× speed) stretches them into streaks. Only stars whose segment changed are redrawn, or the whole screen when that's cheaper.
+- `fishtank`: a reef tank: a clownfish pair around a bubble-tip anemone, two yellow-and-black butterflyfish roaming, swaying seaweed, bubbles from an airstone, light beams onto sand and live rock. Fish are pixel-art sprites rasterized at startup; they turn by narrowing and flipping, and their tails beat by foreshortening. Redrawn: the fish, each bubble, and a plant whenever its sway moves a pixel.
 - `random`: one of these, picked each time the instruction arrives.
 
 ### Phase 8: Sound
@@ -140,7 +141,7 @@ The server's `animation` widget names (from led-kurokku-esp), each redone for a 
 ### Ideas for later
 Things this screen could do that the LED clocks can't; none are scheduled.
 - Animations from lcd-kurokku not yet offered by the server: snow, sparkle, rain.
-- More animations: fireworks, aquarium, lava lamp, Doom fire, Conway's Life, plasma, boids/flocking, a bouncing DVD-style logo, aurora, rain on a window, a fish tank that knows the time of day.
+- More animations: fireworks, lava lamp, Doom fire, Conway's Life, plasma, boids/flocking, a bouncing DVD-style logo, aurora, rain on a window; the fish tank could dim to moonlight at night.
 - Clock faces: word clock, flip-calendar with date, sunrise/sunset dial using the server's solar data, binary/Nixie variants, seasonal themes.
 - Audio: chimes on the hour (a clock entry with a sound on a cron), a startup sound with the splash.
 
