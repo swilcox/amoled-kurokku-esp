@@ -12,6 +12,8 @@ mod analog;
 mod neon;
 #[path = "build_support/segments.rs"]
 mod segments;
+#[path = "build_support/tv.rs"]
+mod tv;
 
 /// Font for server-sent text (messages, status lines).
 const TEXT_FONT: &str = "assets/fonts/FiraSans-SemiBold.ttf";
@@ -147,6 +149,7 @@ fn main() {
     nixie::generate(root, out, &mut pack, "assets/fonts/FiraSans-ExtraLight.ttf", 205.0);
     analog::generate(root, out, &mut pack, DIAL_FONT, 50.0);
     neon::generate(root, out, &mut pack, "assets/fonts/MPLUSRounded1c-Medium-subset.ttf");
+    tv::generate(root, out, &mut pack);
     pack.finish(out);
 
     // Keep partitions.csv in sync with esp-idf-sys's cmake build dirs.
