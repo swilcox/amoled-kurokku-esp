@@ -17,3 +17,8 @@ pub mod analog {
 pub mod neon {
     include!(concat!(env!("OUT_DIR"), "/neon.rs"));
 }
+
+/// Pictures the `static` animation tunes into; see `build_support/tv.rs`.
+pub mod tv {
+    include!(concat!(env!("OUT_DIR"), "/tv.rs"));
+}

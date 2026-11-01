@@ -57,7 +57,7 @@ fn main() -> anyhow::Result<()> {
                 ("Firmware", "0.1.0+c365cb9"),
                 ("Uptime", "3 d 04:12"),
                 ("Free RAM", "112 KB"),
-                ("Rotation", "auto, 90°"),
+                ("Rotation", "auto (90)"),
             ];
             let rows = rows.iter().map(|(l, v)| (l.to_string(), v.to_string())).collect();
             ("info", Box::new(Info::new("amoled0", rows, u32::MAX)))
